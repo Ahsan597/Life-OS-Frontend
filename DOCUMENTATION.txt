@@ -1,0 +1,103 @@
+LIFE OS - FRONTEND DOCUMENTATION
+=================================
+
+WHAT THIS PROJECT IS
+---------------------
+Life OS is a personal system for tracking habits, daily check-ins (mood,
+energy, sleep, stress), and life decisions, then turning that data into
+real self-insight (pattern detection now, prediction/recommendations later).
+
+This folder is the FRONTEND only. The backend is a separate Express.js +
+MySQL project, and the two talk to each other only over a REST JSON API.
+Both sides follow the same shared phase plan (Phase 0 -> Phase 4), and the
+frontend only builds UI for what the backend has already shipped in a
+given phase - no getting ahead of the backend.
+
+WHAT HAS BEEN DONE SO FAR (Phase 0 - setup only, no feature UI yet)
+---------------------------------------------------------------------
+- Scaffolded the React app with Vite + TypeScript.
+- Installed and configured the full stack listed below.
+- Built the base app shell: routing, protected routes, auth state, an
+  Axios API client with token refresh, and placeholder Login/Register/
+  Dashboard pages.
+- No real feature screens yet (no habits UI, no check-ins UI, no charts).
+  Those come once the backend ships the matching endpoints, phase by phase.
+
+IMPORTANT LIBRARIES / TOOLS USED (and why)
+--------------------------------------------
+- React 19 + TypeScript - the UI framework and type safety.
+- Vite - dev server + build tool (fast HMR, used instead of CRA).
+- React Router v7 - client-side routing (login/register/dashboard pages,
+  protected routes).
+- TanStack Query (React Query) - owns ALL server data: fetching, caching,
+  loading/error states, mutations. Anything that comes from the backend
+  API should go through a React Query hook, not plain useState.
+- Zustand - owns CLIENT-ONLY state. Currently just auth (user, access
+  token, refresh token), persisted to localStorage so refreshing the page
+  doesn't log the user out.
+- Axios - the HTTP client. One shared instance (src/api/client.ts) that
+  automatically attaches the auth token to every request and automatically
+  refreshes an expired token on a 401 response, retrying the request once.
+- Tailwind CSS v4 - utility-first styling.
+- shadcn/ui - prebuilt, editable UI components (Button, Input, Card,
+  Dialog, Select, Tabs, Sonner toasts, etc.). These are NOT a package
+  dependency you update via npm - the actual component code lives in
+  src/components/ui and can be edited directly.
+- lucide-react - icon set used by shadcn/ui components.
+
+FOLDER STRUCTURE
+------------------
+src/
+  api/          axios client + one file per backend resource (auth.ts, later habits.ts, checkins.ts, ...)
+  components/
+    layout/     Navbar, Sidebar, AppLayout (page chrome)
+    ui/         shadcn/ui components (generated code, safe to edit)
+  hooks/        React Query hooks per resource (useHabits, useCheckIns, ...) - to be added as phases ship
+  lib/          utils.ts (shadcn's cn() helper), queryClient.ts
+  pages/        one component per route (LoginPage, RegisterPage, DashboardPage, ...)
+  routes/       ProtectedRoute and other route-guarding logic
+  store/        Zustand stores (client-only state, currently just auth)
+  types/        shared TypeScript types, generally mirroring backend DTOs
+
+CONVENTION FOR EACH NEW BACKEND FEATURE
+------------------------------------------
+When the backend ships a new resource (e.g. habits in Phase 1):
+  1. Add src/api/<resource>.ts with the raw axios calls.
+  2. Add src/hooks/use<Resource>.ts wrapping those calls in React Query
+     (useQuery for reads, useMutation for writes).
+  3. Add/extend a page or component under src/pages or src/components
+     that uses the hook.
+Server data stays in React Query. Client-only state (auth, UI toggles)
+stays in Zustand or local component state. Don't mix the two.
+
+AUTH FLOW (built against the PLANNED backend shape - not yet tested live)
+-----------------------------------------------------------------------------
+- POST /auth/login, POST /auth/register, POST /auth/refresh,
+  POST /auth/logout - matches the backend's Phase 0 plan.
+- src/store/authStore.ts holds user / accessToken / refreshToken.
+- src/api/client.ts attaches "Authorization: Bearer <token>" to every
+  request, and on a 401 calls /auth/refresh, retries once, logs out if
+  that also fails.
+- src/routes/ProtectedRoute.tsx redirects to /login if not authenticated.
+This will need to be checked/adjusted once the real backend is running and
+its exact response shapes are known.
+
+ENVIRONMENT VARIABLES
+------------------------
+.env.example / .env.local -> VITE_API_URL (backend base URL, e.g.
+http://localhost:3000/api). .env.local is gitignored - update it with the
+real backend URL once provided.
+
+USEFUL COMMANDS
+------------------
+npm run dev       start the dev server (http://localhost:5173)
+npm run build     type-check then build for production
+npm run preview   preview the production build
+npm run lint      run oxlint
+npx shadcn@latest add <component>   add another shadcn/ui component
+
+STATUS / NEXT STEPS
+----------------------
+Setup is complete and verified (typecheck + build + dev server all tested
+working). Waiting on backend Phase 0/1 endpoint details to wire up real
+API calls and build the actual habit/check-in UI.
