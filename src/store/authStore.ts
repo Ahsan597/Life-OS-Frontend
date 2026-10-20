@@ -1,42 +1,21 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import type { AuthTokens, User } from '@/types/auth'
+import type { User } from '@/types/auth'
+
+/** loading = still checking the stored session on app start */
+export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
 
 interface AuthState {
   user: User | null
-  accessToken: string | null
-  refreshToken: string | null
-  isAuthenticated: boolean
-  setAuth: (user: User, tokens: AuthTokens) => void
-  setAccessToken: (accessToken: string) => void
-  logout: () => void
+  status: AuthStatus
+  setUser: (user: User) => void
+  setLoggedOut: () => void
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      user: null,
-      accessToken: null,
-      refreshToken: null,
-      isAuthenticated: false,
-      setAuth: (user, tokens) =>
-        set({
-          user,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          isAuthenticated: true,
-        }),
-      setAccessToken: (accessToken) => set({ accessToken }),
-      logout: () =>
-        set({
-          user: null,
-          accessToken: null,
-          refreshToken: null,
-          isAuthenticated: false,
-        }),
-    }),
-    {
-      name: 'life-os-auth',
-    },
-  ),
-)
+// Tokens are kept in localStorage via tokenStorage (see src/lib/tokenStorage.ts);
+// this store only holds who is logged in, which is re-fetched from /auth/me on load.
+export const useAuthStore = create<AuthState>()((set) => ({
+  user: null,
+  status: 'loading',
+  setUser: (user) => set({ user, status: 'authenticated' }),
+  setLoggedOut: () => set({ user: null, status: 'unauthenticated' }),
+}))

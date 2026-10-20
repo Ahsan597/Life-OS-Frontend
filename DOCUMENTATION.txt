@@ -50,13 +50,16 @@ FOLDER STRUCTURE
 src/
   api/          axios client + one file per backend resource (auth.ts, later habits.ts, checkins.ts, ...)
   components/
-    layout/     Navbar, Sidebar, AppLayout (page chrome)
+    brand/      Logo
+    form/       FormField, PasswordInput, PasswordStrengthMeter, TimezoneSelect
+    layout/     AppLayout, AuthLayout, Navbar, Sidebar, UserMenu, ThemeToggle
     ui/         shadcn/ui components (generated code, safe to edit)
   hooks/        React Query hooks per resource (useHabits, useCheckIns, ...) - to be added as phases ship
-  lib/          utils.ts (shadcn's cn() helper), queryClient.ts
+  lib/          cn(), queryClient, tokenStorage, session, datetime (user-timezone
+                date helpers), validation (mirrors backend rules), navigation
   pages/        one component per route (LoginPage, RegisterPage, DashboardPage, ...)
   routes/       ProtectedRoute and other route-guarding logic
-  store/        Zustand stores (client-only state, currently just auth)
+  store/        Zustand stores (client-only state: auth status/user, UI prefs)
   types/        shared TypeScript types, generally mirroring backend DTOs
 
 CONVENTION FOR EACH NEW BACKEND FEATURE
@@ -70,23 +73,69 @@ When the backend ships a new resource (e.g. habits in Phase 1):
 Server data stays in React Query. Client-only state (auth, UI toggles)
 stays in Zustand or local component state. Don't mix the two.
 
-AUTH FLOW (built against the PLANNED backend shape - not yet tested live)
------------------------------------------------------------------------------
-- POST /auth/login, POST /auth/register, POST /auth/refresh,
-  POST /auth/logout - matches the backend's Phase 0 plan.
-- src/store/authStore.ts holds user / accessToken / refreshToken.
-- src/api/client.ts attaches "Authorization: Bearer <token>" to every
-  request, and on a 401 calls /auth/refresh, retries once, logs out if
-  that also fails.
-- src/routes/ProtectedRoute.tsx redirects to /login if not authenticated.
-This will need to be checked/adjusted once the real backend is running and
-its exact response shapes are known.
+AUTH FLOW (Phase 0 - wired to the real backend and tested end-to-end)
+------------------------------------------------------------------------
+Endpoints (base: VITE_API_URL = http://localhost:3000/api/v1):
+  POST /auth/register, POST /auth/login -> { user, accessToken, refreshToken }
+  POST /auth/refresh  -> { accessToken, refreshToken }  (NEW refresh token every call)
+  POST /auth/logout   -> 204   GET /auth/me -> { user }
+User ids are strings (BigInt on the server) - never convert them to numbers.
 
-ENVIRONMENT VARIABLES
-------------------------
-.env.example / .env.local -> VITE_API_URL (backend base URL, e.g.
-http://localhost:3000/api). .env.local is gitignored - update it with the
-real backend URL once provided.
+Where things live:
+- src/lib/tokenStorage.ts  tokens in localStorage (lifeos.accessToken /
+  lifeos.refreshToken). Read fresh every time, NOT copied into React state,
+  because another tab may rotate them at any moment.
+- src/store/authStore.ts   Zustand: { user, status: loading | authenticated |
+  unauthenticated }. Not persisted - the user is re-fetched from /auth/me.
+- src/api/client.ts        axios instance. Adds the Bearer token; on a 401 from
+  a protected endpoint it refreshes once and retries once. Never refreshes on
+  401s from /auth/login, /register, /refresh or /logout.
+- src/lib/session.ts       startup check (initSession), login/register
+  (startSession), logout, cross-tab sync, "session expired" handling.
+- src/routes/ProtectedRoute.tsx / GuestRoute.tsx  route guards; the login
+  redirect remembers where the user was going (location.state.from).
+
+REFRESH TOKENS ARE SINGLE-USE. Reusing one makes the backend revoke ALL of the
+user's sessions. So the refresh is:
+  - single-flight inside a tab (every caller shares one in-flight promise);
+  - wrapped in navigator.locks.request('lifeos-refresh') across tabs, and inside
+    the lock it re-checks storage: if another tab already rotated the tokens it
+    uses those instead of calling /auth/refresh again;
+  - started once on load from main.tsx (outside React), so StrictMode's double
+    effects can't fire a second refresh.
+Keep these guarantees if you touch client.ts or session.ts.
+
+THEME ("Calm Focus")
+----------------------
+- src/index.css maps the Calm Focus palette onto shadcn's variables (so all
+  shadcn components pick it up) and adds extra tokens as Tailwind colors:
+  primary-hover, primary-strong, primary-soft, focus-ring, subtle, streak
+  (amber - shadcn already uses "accent" for hover surfaces), streak-soft,
+  success, warning, info, destructive-soft, mood-1..5.
+- Dark mode = data-theme="dark" on <html> (next-themes, storageKey
+  "lifeos-theme"). The inline script in index.html applies it before React
+  loads so there is no flash.
+- Fonts: Inter (UI) + Plus Jakarta Sans (headings, font-heading) via Google
+  Fonts in index.html. Utilities: text-page-title, text-section-title.
+
+TESTING
+---------
+Vitest (Jest-compatible API: describe/it/expect, vi.fn() instead of jest.fn())
++ React Testing Library + MSW. Chosen over Jest because it reuses vite.config.ts
+(the @/ alias, import.meta.env) with no Babel/ts-jest setup.
+
+  npm test                 run all tests once
+  npm run test:watch       re-run on save
+  npm run test:coverage    coverage report (shadcn ui/ files excluded)
+
+- Test files sit next to the code: foo.ts -> foo.test.ts.
+- src/test/fakeBackend.ts is an in-memory fake of the backend auth API (MSW).
+  It implements refresh-token rotation AND reuse detection, so a test fails if
+  the frontend ever sends the same refresh token twice.
+- src/test/renderApp.tsx renders the whole app at a route, with
+  setLoggedIn()/setLoggedOut() helpers.
+- Any request without an MSW handler fails the test (onUnhandledFrame: 'error').
+- When Phase 1 ships, add handlers for the new endpoints to fakeBackend.ts.
 
 USEFUL COMMANDS
 ------------------
@@ -98,6 +147,7 @@ npx shadcn@latest add <component>   add another shadcn/ui component
 
 STATUS / NEXT STEPS
 ----------------------
-Setup is complete and verified (typecheck + build + dev server all tested
-working). Waiting on backend Phase 0/1 endpoint details to wire up real
-API calls and build the actual habit/check-in UI.
+Phase 0 frontend is done: login, register, protected routing, app shell
+(sidebar + top bar + user menu), dashboard placeholder, light/dark theme.
+Habits, Check-ins, History and Insights are "Soon" items that open a Coming
+Soon page. Build them only once the backend ships the Phase 1 endpoints.
