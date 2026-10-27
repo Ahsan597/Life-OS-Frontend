@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   getPasswordChecks,
+  validateDescription,
   validateEmail,
+  validateHabitTitle,
+  validateLogicalDate,
   validateName,
   validatePassword,
+  validateSleepHours,
+  validateTargetDays,
   validateTimeZone,
 } from '@/lib/validation'
 
@@ -73,5 +78,55 @@ describe('getPasswordChecks', () => {
     expect(passed('Abcdefgh')).toBe(2)
     expect(passed('Abcdefg1')).toBe(3)
     expect(passed('Abcdef1!')).toBe(4)
+  })
+})
+
+describe('validateHabitTitle', () => {
+  it('requires 1–150 characters after trimming', () => {
+    expect(validateHabitTitle('Read')).toBeUndefined()
+    expect(validateHabitTitle('   ')).toBe('Title is required')
+    expect(validateHabitTitle('a'.repeat(150))).toBeUndefined()
+    expect(validateHabitTitle('a'.repeat(151))).toBe('Title must be at most 150 characters')
+  })
+})
+
+describe('validateDescription', () => {
+  it('allows blank and caps at 2000 characters', () => {
+    expect(validateDescription('')).toBeUndefined()
+    expect(validateDescription('a'.repeat(2000))).toBeUndefined()
+    expect(validateDescription('a'.repeat(2001))).toBe('Must be at most 2000 characters')
+  })
+})
+
+describe('validateTargetDays', () => {
+  it('needs at least one day only for custom habits', () => {
+    expect(validateTargetDays('custom', [])).toBe('Pick at least one day')
+    expect(validateTargetDays('custom', [1])).toBeUndefined()
+    expect(validateTargetDays('daily', [])).toBeUndefined()
+  })
+})
+
+describe('validateSleepHours', () => {
+  it.each(['', '  ', '0', '7', '7.5', '24'])('accepts %j', (value) => {
+    expect(validateSleepHours(value)).toBeUndefined()
+  })
+
+  it.each([
+    ['abc', 'Enter a number of hours'],
+    ['-1', 'Sleep must be between 0 and 24 hours'],
+    ['24.5', 'Sleep must be between 0 and 24 hours'],
+    ['7.25', 'Use at most one decimal place, e.g. 7.5'],
+  ])('rejects %j', (value, message) => {
+    expect(validateSleepHours(value)).toBe(message)
+  })
+})
+
+describe('validateLogicalDate', () => {
+  it('accepts today and past days but not future ones', () => {
+    expect(validateLogicalDate('2026-10-20', '2026-10-20')).toBeUndefined()
+    expect(validateLogicalDate('2026-01-01', '2026-10-20')).toBeUndefined()
+    expect(validateLogicalDate('2026-10-21', '2026-10-20')).toBe("You can't check in for a future date")
+    expect(validateLogicalDate('', '2026-10-20')).toBe('Choose a date')
+    expect(validateLogicalDate('20/10/2026', '2026-10-20')).toBe('Choose a valid date')
   })
 })

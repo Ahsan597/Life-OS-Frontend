@@ -2,8 +2,13 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { SplashScreen } from '@/components/SplashScreen'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { AuthLayout } from '@/components/layout/AuthLayout'
+import { CheckInHistoryPage } from '@/pages/CheckInHistoryPage'
+import { CheckInPage } from '@/pages/CheckInPage'
 import { ComingSoonPage } from '@/pages/ComingSoonPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { HabitDetailPage } from '@/pages/HabitDetailPage'
+import { EditHabitPage, NewHabitPage } from '@/pages/HabitFormPage'
+import { HabitsPage } from '@/pages/HabitsPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { RegisterPage } from '@/pages/RegisterPage'
@@ -30,10 +35,13 @@ function App() {
         <Route element={<AppLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          {/* Phase 1 features: placeholders until the backend ships them */}
-          <Route path="/habits" element={<ComingSoonPage />} />
-          <Route path="/check-ins" element={<ComingSoonPage />} />
-          <Route path="/history" element={<ComingSoonPage />} />
+          <Route path="/habits" element={<HabitsPage />} />
+          <Route path="/habits/new" element={<NewHabitPage />} />
+          <Route path="/habits/:id" element={<HabitDetailPage />} />
+          <Route path="/habits/:id/edit" element={<EditHabitPage />} />
+          <Route path="/check-ins" element={<CheckInPage />} />
+          <Route path="/history" element={<CheckInHistoryPage />} />
+          {/* Later phases: placeholder until the backend ships them */}
           <Route path="/insights" element={<ComingSoonPage />} />
         </Route>
       </Route>

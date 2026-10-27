@@ -13,15 +13,18 @@ Both sides follow the same shared phase plan (Phase 0 -> Phase 4), and the
 frontend only builds UI for what the backend has already shipped in a
 given phase - no getting ahead of the backend.
 
-WHAT HAS BEEN DONE SO FAR (Phase 0 - setup only, no feature UI yet)
----------------------------------------------------------------------
-- Scaffolded the React app with Vite + TypeScript.
-- Installed and configured the full stack listed below.
-- Built the base app shell: routing, protected routes, auth state, an
-  Axios API client with token refresh, and placeholder Login/Register/
-  Dashboard pages.
-- No real feature screens yet (no habits UI, no check-ins UI, no charts).
-  Those come once the backend ships the matching endpoints, phase by phase.
+WHAT HAS BEEN DONE SO FAR
+---------------------------
+Phase 0 - setup + auth:
+- Scaffolded the React app with Vite + TypeScript and the stack below.
+- App shell: routing, protected routes, auth state, an Axios API client with
+  token refresh, Login/Register pages, light/dark theme.
+Phase 1 - the core habit + check-in loop (see PHASE 1 below):
+- Dashboard with today's habits (done toggle + streaks) and a check-in prompt.
+- Habits: list (+ show archived), create, edit, archive (confirm), restore.
+- Habit detail: streak + completion tiles, calendar heatmap, weekly
+  completion-rate chart, log history with editable notes.
+- Check-in form (today or a past day) and check-in history with trend charts.
 
 IMPORTANT LIBRARIES / TOOLS USED (and why)
 --------------------------------------------
@@ -48,15 +51,25 @@ IMPORTANT LIBRARIES / TOOLS USED (and why)
 FOLDER STRUCTURE
 ------------------
 src/
-  api/          axios client + one file per backend resource (auth.ts, later habits.ts, checkins.ts, ...)
+  api/          axios client + one file per backend resource (auth.ts, habits.ts, checkIns.ts)
   components/
     brand/      Logo
+    charts/     hand-rolled SVG charts: TrendLineChart, WeeklyRateChart (+ tooltip,
+                "Show data" table, width hook)
+    checkins/   CheckInForm, ScalePicker
+    common/     EmptyState, LoadError, PageHeader, StatTile
     form/       FormField, PasswordInput, PasswordStrengthMeter, TimezoneSelect
+    habits/     HabitForm, WeekdayPicker, HabitCheckButton, StreakBadge,
+                CalendarHeatmap, LogHistory, ArchiveHabitDialog
     layout/     AppLayout, AuthLayout, Navbar, Sidebar, UserMenu, ThemeToggle
     ui/         shadcn/ui components (generated code, safe to edit)
-  hooks/        React Query hooks per resource (useHabits, useCheckIns, ...) - to be added as phases ship
+  hooks/        React Query hooks per resource (useAuth, useHabits, useCheckIns),
+                useToday, plus small UI hooks
   lib/          cn(), queryClient, tokenStorage, session, datetime (user-timezone
-                date helpers), validation (mirrors backend rules), navigation
+                date helpers), dates (YYYY-MM-DD "logical date" math), habits
+                (schedules, streak labels, heatmap builder), checkIns (metric
+                meta, trend tone, gap-aware series), validation (mirrors
+                backend rules), form, navigation
   pages/        one component per route (LoginPage, RegisterPage, DashboardPage, ...)
   routes/       ProtectedRoute and other route-guarding logic
   store/        Zustand stores (client-only state: auth status/user, UI prefs)
@@ -105,6 +118,42 @@ user's sessions. So the refresh is:
     effects can't fire a second refresh.
 Keep these guarantees if you touch client.ts or session.ts.
 
+PHASE 1 - HABITS + CHECK-INS
+------------------------------
+Routes:
+  /dashboard          today's habits (toggle + streaks), check-in prompt/summary
+  /habits             list; ?archived=1 also shows archived habits with Restore
+  /habits/new         create          /habits/:id/edit   edit
+  /habits/:id         detail: tiles, calendar heatmap, weekly chart, log notes
+  /check-ins          today's check-in; ?date=YYYY-MM-DD for a past day
+  /history            trends; ?days=7 or ?days=90 (30 is the default)
+Insights is still a "Soon" item (later phase).
+
+Rules the UI depends on (all from the backend contract):
+- "TODAY" COMES FROM THE SERVER: habits[i].today.date, in the user's timezone.
+  useToday() returns it; with no habits it falls back to the same rule the
+  server uses (current instant in user.timezone) - never the browser's date.
+- Dates are plain YYYY-MM-DD strings. Do date math with src/lib/dates.ts (UTC
+  based, DST-safe), never with local-time Date methods.
+- Future dates are rejected: the date field has max=today, future days are not
+  clickable in the calendar, and a future ?date= falls back to today.
+- Weekdays are 0 = Sun ... 6 = Sat; weeks run Mon-Sun, so pickers and the
+  calendar list Monday first. Weekly habits' streaks are counted in weeks.
+- POST/PUT /habits return the habit WITHOUT today/streaks, so every habit write
+  invalidates the whole ['habits'] query key and the server recomputes streaks.
+  The client never calculates a streak itself.
+- Toggling a habit is optimistic (checkbox + calendar cell flip at once) and
+  rolls back with a toast if the server refuses.
+- GET /checkins/:date 404 = "no check-in yet": getCheckIn() returns null and the
+  UI shows an empty form / the dashboard prompt, not an error.
+- Saving a check-in ALWAYS sends all four metrics (null for blank), because on
+  an update the backend keeps any field that is left out.
+- Charts: days without data are gaps, never zeros. Rising stress is shown as
+  bad (red); rising mood/energy/sleep as good. Every chart has a hover/keyboard
+  readout and a "Show data" table, so nothing is hover-only.
+- Server errors: 400 details map onto form fields; field "" is a form-level
+  error shown in an alert (lib/form.ts splitServerErrors).
+
 THEME ("Calm Focus")
 ----------------------
 - src/index.css maps the Calm Focus palette onto shadcn's variables (so all
@@ -129,13 +178,23 @@ Vitest (Jest-compatible API: describe/it/expect, vi.fn() instead of jest.fn())
   npm run test:coverage    coverage report (shadcn ui/ files excluded)
 
 - Test files sit next to the code: foo.ts -> foo.test.ts.
-- src/test/fakeBackend.ts is an in-memory fake of the backend auth API (MSW).
-  It implements refresh-token rotation AND reuse detection, so a test fails if
-  the frontend ever sends the same refresh token twice.
+- EVERY CHANGE SHIPS WITH UNIT TESTS; a phase is not done until npm test passes.
+- src/test/fakeBackend.ts is an in-memory fake of the backend API (MSW):
+  - auth, with refresh-token rotation AND reuse detection, so a test fails if
+    the frontend ever sends the same refresh token twice;
+  - Phase 1 habits/logs/check-ins, porting the backend's streak + stats rules
+    (independently of the frontend code), so toggling a habit in a test really
+    changes the streak the "server" returns. Seed with seedHabit(), seedLog(),
+    seedCheckIn(); inspect with requests(), lastBody(), habit(), logs(),
+    checkIns().
+- src/test/time.ts: freezeTime() fixes the clock to Tue 2026-10-20 (Date only;
+  timers stay real). The fake backend derives "today" from it, like the server.
 - src/test/renderApp.tsx renders the whole app at a route, with
   setLoggedIn()/setLoggedOut() helpers.
 - Any request without an MSW handler fails the test (onUnhandledFrame: 'error').
-- When Phase 1 ships, add handlers for the new endpoints to fakeBackend.ts.
+- Timeouts are raised (20s per test, 5s for findBy/waitFor) because full-app
+  page tests are slow when every file runs in parallel with coverage.
+- When a new phase ships, add handlers for its endpoints to fakeBackend.ts.
 
 USEFUL COMMANDS
 ------------------
@@ -147,7 +206,5 @@ npx shadcn@latest add <component>   add another shadcn/ui component
 
 STATUS / NEXT STEPS
 ----------------------
-Phase 0 frontend is done: login, register, protected routing, app shell
-(sidebar + top bar + user menu), dashboard placeholder, light/dark theme.
-Habits, Check-ins, History and Insights are "Soon" items that open a Coming
-Soon page. Build them only once the backend ships the Phase 1 endpoints.
+Phase 0 and Phase 1 frontend are done and tested (253 tests). Insights is the
+only "Soon" item left; build it once the backend ships the matching endpoints.

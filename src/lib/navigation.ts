@@ -17,9 +17,9 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboardIcon },
-  { to: '/habits', label: 'Habits', icon: ListChecksIcon, soon: true },
-  { to: '/check-ins', label: 'Check-ins', icon: SmileIcon, soon: true },
-  { to: '/history', label: 'History', icon: CalendarDaysIcon, soon: true },
+  { to: '/habits', label: 'Habits', icon: ListChecksIcon },
+  { to: '/check-ins', label: 'Check-in', icon: SmileIcon },
+  { to: '/history', label: 'History', icon: CalendarDaysIcon },
   { to: '/insights', label: 'Insights', icon: SparklesIcon, soon: true },
 ]
 

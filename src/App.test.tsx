@@ -39,17 +39,24 @@ describe('routing', () => {
     expect(screen.getByRole('heading', { name: /Good (morning|afternoon|evening)/ })).toBeInTheDocument()
   })
 
+  it('shows Coming Soon on /insights (a later phase)', () => {
+    setLoggedIn()
+    renderApp('/insights')
+
+    expect(screen.getByRole('heading', { name: 'Insights is on its way' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to dashboard' })).toBeInTheDocument()
+  })
+
   it.each([
     ['/habits', 'Habits'],
-    ['/check-ins', 'Check-ins'],
-    ['/history', 'History'],
-    ['/insights', 'Insights'],
-  ])('shows Coming Soon on %s', (path, name) => {
+    ['/habits/new', 'New habit'],
+    ['/check-ins', 'Daily check-in'],
+    ['/history', 'Check-in history'],
+  ])('renders the Phase 1 page at %s', async (path, heading) => {
     setLoggedIn()
     renderApp(path)
 
-    expect(screen.getByRole('heading', { name: `${name} is on its way` })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Back to dashboard' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument()
   })
 
   it('shows the 404 page for unknown routes', () => {
@@ -61,18 +68,27 @@ describe('routing', () => {
 })
 
 describe('app shell', () => {
-  it('marks Dashboard active and the Phase 1 items as "Soon"', () => {
+  it('marks Dashboard active, enables the Phase 1 items and keeps Insights as "Soon"', () => {
     setLoggedIn()
     renderApp('/dashboard')
     const nav = screen.getByRole('navigation', { name: 'Main' })
 
     expect(within(nav).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
-    for (const name of ['Habits', 'Check-ins', 'History', 'Insights']) {
-      expect(within(nav).getByRole('link', { name: new RegExp(`^${name}\\s*Soon$`) })).toBeInTheDocument()
+    for (const name of ['Habits', 'Check-in', 'History']) {
+      expect(within(nav).getByRole('link', { name })).toBeInTheDocument()
     }
+    expect(within(nav).getByRole('link', { name: /^Insights\s*Soon$/ })).toBeInTheDocument()
   })
 
-  it('shows the profile from the logged-in user', () => {
+  it('marks Habits active on nested habit pages', () => {
+    setLoggedIn()
+    renderApp('/habits/new')
+    const nav = screen.getByRole('navigation', { name: 'Main' })
+
+    expect(within(nav).getByRole('link', { name: 'Habits' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('shows the profile from the logged-in user', async () => {
     setLoggedIn({ name: null, email: 'zara@example.com', timezone: 'Europe/London' })
     renderApp('/dashboard')
 
@@ -80,7 +96,8 @@ describe('app shell', () => {
     expect(screen.getByText('zara@example.com')).toBeInTheDocument()
     expect(screen.getByText('Europe/London')).toBeInTheDocument()
     expect(screen.getByText('17 October 2026')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add habit' })).toBeDisabled()
+    // With no habits yet, the habits card invites the first one.
+    expect(await screen.findByRole('link', { name: 'Add habit' })).toHaveAttribute('href', '/habits/new')
   })
 
   it('logs out from the user menu', async () => {
