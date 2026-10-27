@@ -1,10 +1,5 @@
 import { apiClient } from '@/api/client'
-import type { AuthTokens, LoginPayload, RegisterPayload, User } from '@/types/auth'
-
-interface AuthResponse {
-  user: User
-  tokens: AuthTokens
-}
+import type { AuthResponse, LoginPayload, RegisterPayload, User } from '@/types/auth'
 
 export async function login(payload: LoginPayload): Promise<AuthResponse> {
   const { data } = await apiClient.post<AuthResponse>('/auth/login', payload)
@@ -16,6 +11,11 @@ export async function register(payload: RegisterPayload): Promise<AuthResponse> 
   return data
 }
 
-export async function logout(): Promise<void> {
-  await apiClient.post('/auth/logout')
+export async function logout(refreshToken: string): Promise<void> {
+  await apiClient.post('/auth/logout', { refreshToken })
+}
+
+export async function getMe(): Promise<User> {
+  const { data } = await apiClient.get<{ user: User }>('/auth/me')
+  return data.user
 }

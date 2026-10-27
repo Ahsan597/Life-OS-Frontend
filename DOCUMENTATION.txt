@@ -13,15 +13,22 @@ Both sides follow the same shared phase plan (Phase 0 -> Phase 4), and the
 frontend only builds UI for what the backend has already shipped in a
 given phase - no getting ahead of the backend.
 
-WHAT HAS BEEN DONE SO FAR (Phase 0 - setup only, no feature UI yet)
----------------------------------------------------------------------
-- Scaffolded the React app with Vite + TypeScript.
-- Installed and configured the full stack listed below.
-- Built the base app shell: routing, protected routes, auth state, an
-  Axios API client with token refresh, and placeholder Login/Register/
-  Dashboard pages.
-- No real feature screens yet (no habits UI, no check-ins UI, no charts).
-  Those come once the backend ships the matching endpoints, phase by phase.
+WHAT HAS BEEN DONE SO FAR
+---------------------------
+Phase 0 - setup + auth:
+- Scaffolded the React app with Vite + TypeScript and the stack below.
+- App shell: routing, protected routes, auth state, an Axios API client with
+  token refresh, Login/Register pages, light/dark theme.
+Phase 1 - the core habit + check-in loop (see PHASE 1 below):
+- Dashboard with today's habits (done toggle + streaks) and a check-in prompt.
+- Habits: list (+ show archived), create, edit, archive (confirm), restore.
+- Habit detail: streak + completion tiles, calendar heatmap, weekly
+  completion-rate chart, log history with editable notes.
+- Check-in form (today or a past day) and check-in history with trend charts.
+Phase 2 - insights (see PHASE 2 below):
+- Insights page: recommendations feed (accept / dismiss, history), key
+  findings, completion-by-metric bar chart, per-habit correlations.
+- Dashboard "Suggestions" card and a recommendation banner on habit detail.
 
 IMPORTANT LIBRARIES / TOOLS USED (and why)
 --------------------------------------------
@@ -48,15 +55,28 @@ IMPORTANT LIBRARIES / TOOLS USED (and why)
 FOLDER STRUCTURE
 ------------------
 src/
-  api/          axios client + one file per backend resource (auth.ts, later habits.ts, checkins.ts, ...)
+  api/          axios client + one file per backend resource (auth.ts, habits.ts, checkIns.ts)
   components/
-    layout/     Navbar, Sidebar, AppLayout (page chrome)
+    brand/      Logo
+    charts/     hand-rolled SVG charts: TrendLineChart, WeeklyRateChart (+ tooltip,
+                "Show data" table, width hook)
+    checkins/   CheckInForm, ScalePicker
+    common/     EmptyState, LoadError, PageHeader, StatTile
+    form/       FormField, PasswordInput, PasswordStrengthMeter, TimezoneSelect
+    habits/     HabitForm, WeekdayPicker, HabitCheckButton, StreakBadge,
+                CalendarHeatmap, LogHistory, ArchiveHabitDialog
+    layout/     AppLayout, AuthLayout, Navbar, Sidebar, UserMenu, ThemeToggle
     ui/         shadcn/ui components (generated code, safe to edit)
-  hooks/        React Query hooks per resource (useHabits, useCheckIns, ...) - to be added as phases ship
-  lib/          utils.ts (shadcn's cn() helper), queryClient.ts
+  hooks/        React Query hooks per resource (useAuth, useHabits, useCheckIns),
+                useToday, plus small UI hooks
+  lib/          cn(), queryClient, tokenStorage, session, datetime (user-timezone
+                date helpers), dates (YYYY-MM-DD "logical date" math), habits
+                (schedules, streak labels, heatmap builder), checkIns (metric
+                meta, trend tone, gap-aware series), validation (mirrors
+                backend rules), form, navigation
   pages/        one component per route (LoginPage, RegisterPage, DashboardPage, ...)
   routes/       ProtectedRoute and other route-guarding logic
-  store/        Zustand stores (client-only state, currently just auth)
+  store/        Zustand stores (client-only state: auth status/user, UI prefs)
   types/        shared TypeScript types, generally mirroring backend DTOs
 
 CONVENTION FOR EACH NEW BACKEND FEATURE
@@ -70,23 +90,157 @@ When the backend ships a new resource (e.g. habits in Phase 1):
 Server data stays in React Query. Client-only state (auth, UI toggles)
 stays in Zustand or local component state. Don't mix the two.
 
-AUTH FLOW (built against the PLANNED backend shape - not yet tested live)
------------------------------------------------------------------------------
-- POST /auth/login, POST /auth/register, POST /auth/refresh,
-  POST /auth/logout - matches the backend's Phase 0 plan.
-- src/store/authStore.ts holds user / accessToken / refreshToken.
-- src/api/client.ts attaches "Authorization: Bearer <token>" to every
-  request, and on a 401 calls /auth/refresh, retries once, logs out if
-  that also fails.
-- src/routes/ProtectedRoute.tsx redirects to /login if not authenticated.
-This will need to be checked/adjusted once the real backend is running and
-its exact response shapes are known.
+AUTH FLOW (Phase 0 - wired to the real backend and tested end-to-end)
+------------------------------------------------------------------------
+Endpoints (base: VITE_API_URL = http://localhost:3000/api/v1):
+  POST /auth/register, POST /auth/login -> { user, accessToken, refreshToken }
+  POST /auth/refresh  -> { accessToken, refreshToken }  (NEW refresh token every call)
+  POST /auth/logout   -> 204   GET /auth/me -> { user }
+User ids are strings (BigInt on the server) - never convert them to numbers.
 
-ENVIRONMENT VARIABLES
-------------------------
-.env.example / .env.local -> VITE_API_URL (backend base URL, e.g.
-http://localhost:3000/api). .env.local is gitignored - update it with the
-real backend URL once provided.
+Where things live:
+- src/lib/tokenStorage.ts  tokens in localStorage (lifeos.accessToken /
+  lifeos.refreshToken). Read fresh every time, NOT copied into React state,
+  because another tab may rotate them at any moment.
+- src/store/authStore.ts   Zustand: { user, status: loading | authenticated |
+  unauthenticated }. Not persisted - the user is re-fetched from /auth/me.
+- src/api/client.ts        axios instance. Adds the Bearer token; on a 401 from
+  a protected endpoint it refreshes once and retries once. Never refreshes on
+  401s from /auth/login, /register, /refresh or /logout.
+- src/lib/session.ts       startup check (initSession), login/register
+  (startSession), logout, cross-tab sync, "session expired" handling.
+- src/routes/ProtectedRoute.tsx / GuestRoute.tsx  route guards; the login
+  redirect remembers where the user was going (location.state.from).
+
+REFRESH TOKENS ARE SINGLE-USE. Reusing one makes the backend revoke ALL of the
+user's sessions. So the refresh is:
+  - single-flight inside a tab (every caller shares one in-flight promise);
+  - wrapped in navigator.locks.request('lifeos-refresh') across tabs, and inside
+    the lock it re-checks storage: if another tab already rotated the tokens it
+    uses those instead of calling /auth/refresh again;
+  - started once on load from main.tsx (outside React), so StrictMode's double
+    effects can't fire a second refresh.
+Keep these guarantees if you touch client.ts or session.ts.
+
+PHASE 1 - HABITS + CHECK-INS
+------------------------------
+Routes:
+  /dashboard          today's habits (toggle + streaks), check-in prompt/summary
+  /habits             list; ?archived=1 also shows archived habits with Restore
+  /habits/new         create          /habits/:id/edit   edit
+  /habits/:id         detail: tiles, calendar heatmap, weekly chart, log notes
+  /check-ins          today's check-in; ?date=YYYY-MM-DD for a past day
+  /history            trends; ?days=7 or ?days=90 (30 is the default)
+Insights shipped in Phase 2 (below).
+
+Rules the UI depends on (all from the backend contract):
+- "TODAY" COMES FROM THE SERVER: habits[i].today.date, in the user's timezone.
+  useToday() returns it; with no habits it falls back to the same rule the
+  server uses (current instant in user.timezone) - never the browser's date.
+- Dates are plain YYYY-MM-DD strings. Do date math with src/lib/dates.ts (UTC
+  based, DST-safe), never with local-time Date methods.
+- Future dates are rejected: the date field has max=today, future days are not
+  clickable in the calendar, and a future ?date= falls back to today.
+- Weekdays are 0 = Sun ... 6 = Sat; weeks run Mon-Sun, so pickers and the
+  calendar list Monday first. Weekly habits' streaks are counted in weeks.
+- POST/PUT /habits return the habit WITHOUT today/streaks, so every habit write
+  invalidates the whole ['habits'] query key and the server recomputes streaks.
+  The client never calculates a streak itself.
+- Toggling a habit is optimistic (checkbox + calendar cell flip at once) and
+  rolls back with a toast if the server refuses.
+- GET /checkins/:date 404 = "no check-in yet": getCheckIn() returns null and the
+  UI shows an empty form / the dashboard prompt, not an error.
+- Saving a check-in ALWAYS sends all four metrics (null for blank), because on
+  an update the backend keeps any field that is left out.
+- Charts: days without data are gaps, never zeros. Rising stress is shown as
+  bad (red); rising mood/energy/sleep as good. Every chart has a hover/keyboard
+  readout and a "Show data" table, so nothing is hover-only.
+- Server errors: 400 details map onto form fields; field "" is a form-level
+  error shown in an alert (lib/form.ts splitServerErrors).
+
+PHASE 2 - INSIGHTS
+--------------------
+The backend computes every pattern and recommendation; the frontend only shows
+them and lets the user accept or dismiss recommendations.
+
+Routes / UI:
+  /insights           recommendations (For you / History), then "Patterns":
+                      key findings, completion-by-metric chart, per-habit
+                      correlations. ?days=30 or ?days=180 (90 is the default)
+  /dashboard          "Suggestions" card: newest 2 pending + "See all"
+  /habits/:id         pending recommendations for that habit, as a banner
+
+Endpoints (src/api/insights.ts, hooks in src/hooks/useInsights.ts):
+  GET   /insights/correlations?from=&to=        query key ['correlations', from, to]
+  GET   /insights/recommendations?status=       query key ['recommendations', status]
+  PATCH /insights/recommendations/:id  {status: accepted|dismissed}
+
+Rules the UI depends on:
+- The range ends YESTERDAY (today is still in progress): lib/insights.ts
+  insightsRange(). The server caps `to` there too.
+- Show `summary` as the text of every finding; it is already user-facing.
+- Strength badge: strong = bold, moderate = normal, everything else muted.
+  The r bar runs -1..+1 from the centre: green where the metric helps (positive
+  r), red where it hurts (negative r, e.g. stress).
+- highlights only has moderate/strong findings. Empty -> "Keep logging..."
+  empty state. "Correlation, not causation." is always shown.
+- Chart buckets with averageCompletionRate null are drawn as dashed outlines.
+- Weekly habits never appear in the per-habit list.
+- Recommendation icon/tone per rule: lib/insights.ts RULE_META (unknown rules
+  fall back to a neutral card). checkin_gap also links to /check-ins (the spec
+  said /checkin; this app's route is /check-ins).
+- Accept/dismiss is optimistic: the card leaves the pending list at once and
+  comes back with a toast if the PATCH fails; afterwards ['recommendations'] is
+  invalidated.
+- Recommendations are recomputed by the server on every call, so ANY habit,
+  log or check-in write also invalidates ['recommendations'] and
+  ['correlations'] (useHabits refreshAfterWrite, useSaveCheckIn).
+
+THEME ("Calm Focus")
+----------------------
+- src/index.css maps the Calm Focus palette onto shadcn's variables (so all
+  shadcn components pick it up) and adds extra tokens as Tailwind colors:
+  primary-hover, primary-strong, primary-soft, focus-ring, subtle, streak
+  (amber - shadcn already uses "accent" for hover surfaces), streak-soft,
+  success, warning, info, destructive-soft, mood-1..5.
+- Dark mode = data-theme="dark" on <html> (next-themes, storageKey
+  "lifeos-theme"). The inline script in index.html applies it before React
+  loads so there is no flash.
+- Fonts: Inter (UI) + Plus Jakarta Sans (headings, font-heading) via Google
+  Fonts in index.html. Utilities: text-page-title, text-section-title.
+
+TESTING
+---------
+Vitest (Jest-compatible API: describe/it/expect, vi.fn() instead of jest.fn())
++ React Testing Library + MSW. Chosen over Jest because it reuses vite.config.ts
+(the @/ alias, import.meta.env) with no Babel/ts-jest setup.
+
+  npm test                 run all tests once
+  npm run test:watch       re-run on save
+  npm run test:coverage    coverage report (shadcn ui/ files excluded)
+
+- Test files sit next to the code: foo.ts -> foo.test.ts.
+- EVERY CHANGE SHIPS WITH UNIT TESTS; a phase is not done until npm test passes.
+- src/test/fakeBackend.ts is an in-memory fake of the backend API (MSW):
+  - auth, with refresh-token rotation AND reuse detection, so a test fails if
+    the frontend ever sends the same refresh token twice;
+  - Phase 1 habits/logs/check-ins, porting the backend's streak + stats rules
+    (independently of the frontend code), so toggling a habit in a test really
+    changes the streak the "server" returns. Seed with seedHabit(), seedLog(),
+    seedCheckIn(); inspect with requests(), lastBody(), habit(), logs(),
+    checkIns().
+  - Phase 2 insights: recommendations are stored and filtered like the real
+    API (seedRecommendation(), recommendation()); correlations are NOT
+    computed - tests seedCorrelations() with the parts they need and anything
+    missing comes back as "not enough data".
+- src/test/time.ts: freezeTime() fixes the clock to Tue 2026-10-20 (Date only;
+  timers stay real). The fake backend derives "today" from it, like the server.
+- src/test/renderApp.tsx renders the whole app at a route, with
+  setLoggedIn()/setLoggedOut() helpers.
+- Any request without an MSW handler fails the test (onUnhandledFrame: 'error').
+- Timeouts are raised (20s per test, 5s for findBy/waitFor) because full-app
+  page tests are slow when every file runs in parallel with coverage.
+- When a new phase ships, add handlers for its endpoints to fakeBackend.ts.
 
 USEFUL COMMANDS
 ------------------
@@ -98,6 +252,6 @@ npx shadcn@latest add <component>   add another shadcn/ui component
 
 STATUS / NEXT STEPS
 ----------------------
-Setup is complete and verified (typecheck + build + dev server all tested
-working). Waiting on backend Phase 0/1 endpoint details to wire up real
-API calls and build the actual habit/check-in UI.
+Phase 0, Phase 1 and Phase 2 frontend are done and tested (281 tests). Next is
+Phase 3; build it once the backend ships the matching endpoints. The nav still
+supports `soon: true` and ComingSoonPage for any later placeholder routes.
