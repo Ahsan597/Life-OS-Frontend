@@ -25,6 +25,10 @@ Phase 1 - the core habit + check-in loop (see PHASE 1 below):
 - Habit detail: streak + completion tiles, calendar heatmap, weekly
   completion-rate chart, log history with editable notes.
 - Check-in form (today or a past day) and check-in history with trend charts.
+Phase 2 - insights (see PHASE 2 below):
+- Insights page: recommendations feed (accept / dismiss, history), key
+  findings, completion-by-metric bar chart, per-habit correlations.
+- Dashboard "Suggestions" card and a recommendation banner on habit detail.
 
 IMPORTANT LIBRARIES / TOOLS USED (and why)
 --------------------------------------------
@@ -127,7 +131,7 @@ Routes:
   /habits/:id         detail: tiles, calendar heatmap, weekly chart, log notes
   /check-ins          today's check-in; ?date=YYYY-MM-DD for a past day
   /history            trends; ?days=7 or ?days=90 (30 is the default)
-Insights is still a "Soon" item (later phase).
+Insights shipped in Phase 2 (below).
 
 Rules the UI depends on (all from the backend contract):
 - "TODAY" COMES FROM THE SERVER: habits[i].today.date, in the user's timezone.
@@ -153,6 +157,44 @@ Rules the UI depends on (all from the backend contract):
   readout and a "Show data" table, so nothing is hover-only.
 - Server errors: 400 details map onto form fields; field "" is a form-level
   error shown in an alert (lib/form.ts splitServerErrors).
+
+PHASE 2 - INSIGHTS
+--------------------
+The backend computes every pattern and recommendation; the frontend only shows
+them and lets the user accept or dismiss recommendations.
+
+Routes / UI:
+  /insights           recommendations (For you / History), then "Patterns":
+                      key findings, completion-by-metric chart, per-habit
+                      correlations. ?days=30 or ?days=180 (90 is the default)
+  /dashboard          "Suggestions" card: newest 2 pending + "See all"
+  /habits/:id         pending recommendations for that habit, as a banner
+
+Endpoints (src/api/insights.ts, hooks in src/hooks/useInsights.ts):
+  GET   /insights/correlations?from=&to=        query key ['correlations', from, to]
+  GET   /insights/recommendations?status=       query key ['recommendations', status]
+  PATCH /insights/recommendations/:id  {status: accepted|dismissed}
+
+Rules the UI depends on:
+- The range ends YESTERDAY (today is still in progress): lib/insights.ts
+  insightsRange(). The server caps `to` there too.
+- Show `summary` as the text of every finding; it is already user-facing.
+- Strength badge: strong = bold, moderate = normal, everything else muted.
+  The r bar runs -1..+1 from the centre: green where the metric helps (positive
+  r), red where it hurts (negative r, e.g. stress).
+- highlights only has moderate/strong findings. Empty -> "Keep logging..."
+  empty state. "Correlation, not causation." is always shown.
+- Chart buckets with averageCompletionRate null are drawn as dashed outlines.
+- Weekly habits never appear in the per-habit list.
+- Recommendation icon/tone per rule: lib/insights.ts RULE_META (unknown rules
+  fall back to a neutral card). checkin_gap also links to /check-ins (the spec
+  said /checkin; this app's route is /check-ins).
+- Accept/dismiss is optimistic: the card leaves the pending list at once and
+  comes back with a toast if the PATCH fails; afterwards ['recommendations'] is
+  invalidated.
+- Recommendations are recomputed by the server on every call, so ANY habit,
+  log or check-in write also invalidates ['recommendations'] and
+  ['correlations'] (useHabits refreshAfterWrite, useSaveCheckIn).
 
 THEME ("Calm Focus")
 ----------------------
@@ -187,6 +229,10 @@ Vitest (Jest-compatible API: describe/it/expect, vi.fn() instead of jest.fn())
     changes the streak the "server" returns. Seed with seedHabit(), seedLog(),
     seedCheckIn(); inspect with requests(), lastBody(), habit(), logs(),
     checkIns().
+  - Phase 2 insights: recommendations are stored and filtered like the real
+    API (seedRecommendation(), recommendation()); correlations are NOT
+    computed - tests seedCorrelations() with the parts they need and anything
+    missing comes back as "not enough data".
 - src/test/time.ts: freezeTime() fixes the clock to Tue 2026-10-20 (Date only;
   timers stay real). The fake backend derives "today" from it, like the server.
 - src/test/renderApp.tsx renders the whole app at a route, with
@@ -206,5 +252,6 @@ npx shadcn@latest add <component>   add another shadcn/ui component
 
 STATUS / NEXT STEPS
 ----------------------
-Phase 0 and Phase 1 frontend are done and tested (253 tests). Insights is the
-only "Soon" item left; build it once the backend ships the matching endpoints.
+Phase 0, Phase 1 and Phase 2 frontend are done and tested (281 tests). Next is
+Phase 3; build it once the backend ships the matching endpoints. The nav still
+supports `soon: true` and ComingSoonPage for any later placeholder routes.

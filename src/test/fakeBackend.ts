@@ -1,7 +1,7 @@
 import { http, HttpResponse, type PathParams } from 'msw'
 
 /*
- * In-memory fake of the backend API (Phase 0 auth + Phase 1 habits/check-ins), used by MSW in tests.
+ * In-memory fake of the backend API (Phase 0 auth, Phase 1 habits/check-ins, Phase 2 insights), used by MSW in tests.
  * It mirrors the real contract, including refresh-token rotation and reuse
  * detection: sending an already-used refresh token revokes all of that user's
  * sessions and sets `reuseDetected`, so tests can assert the frontend never does it.
@@ -28,6 +28,8 @@ const state = {
   habits: [] as FakeHabit[],
   logs: [] as FakeLog[],
   checkIns: [] as FakeCheckIn[],
+  recommendations: [] as FakeRecommendation[],
+  correlations: null as Partial<Body> | null,
   accessTokens: new Map<string, string>(),
   refreshTokens: new Map<string, RefreshRecord>(),
   requests: [] as string[],
@@ -66,6 +68,8 @@ export const fakeBackend = {
     state.habits = []
     state.logs = []
     state.checkIns = []
+    state.recommendations = []
+    state.correlations = null
     state.accessTokens.clear()
     state.refreshTokens.clear()
     state.requests = []
@@ -145,6 +149,34 @@ export const fakeBackend = {
     return strip(checkIn)
   },
 
+  /**
+   * The correlation maths lives in the backend; tests seed the parts of the response they need.
+   * Anything left out comes back as "not enough data".
+   */
+  seedCorrelations(fields: Partial<Body>) {
+    state.correlations = fields
+  },
+
+  seedRecommendation(fields: Partial<FakeRecommendation> & { message: string }) {
+    state.counter += 1
+    const recommendation: FakeRecommendation = {
+      id: String(800 + state.counter),
+      userId: state.users.at(-1)!.id,
+      rule: 'missed_in_a_row',
+      source: 'rule_based',
+      habitId: null,
+      habitTitle: null,
+      reason: 'Because of a pattern in your recent logs.',
+      status: 'pending',
+      createdAt: `2026-10-${String(10 + state.recommendations.length).padStart(2, '0')}T10:00:00.000Z`,
+      updatedAt: '2026-10-10T10:00:00.000Z',
+      ...fields,
+    }
+    state.recommendations.push(recommendation)
+    return strip(recommendation)
+  },
+
+  recommendation: (id: string) => state.recommendations.find((r) => r.id === id),
   habit: (id: string) => state.habits.find((h) => h.id === id),
   logs: () => state.logs.map((l) => ({ ...l })),
   checkIns: () => state.checkIns.map((c) => ({ ...c })),
@@ -154,6 +186,7 @@ export const fakeBackend = {
 
 export const handlers = [
   ...phase1Handlers(),
+  ...phase2Handlers(),
   http.get(`${API}/health`, () => HttpResponse.json({ status: 'ok', database: 'connected' })),
 
   http.post(`${API}/auth/register`, async ({ request }) => {
@@ -700,6 +733,98 @@ function phase1Handlers() {
         for (const key of [...METRIC_KEYS, 'note']) if (body[key] !== undefined) record[key] = body[key]
         if (found.sleepHours != null) found.sleepHours = Math.round(found.sleepHours * 10) / 10
         return HttpResponse.json({ checkIn: strip(found) }, { status: created ? 201 : 200 })
+      }),
+    ),
+  ]
+}
+
+// ===========================================================================
+// Phase 2: insights (correlations + recommendations)
+//
+// Recommendations are stored and filtered like the real API; correlations are
+// whatever the test seeded, wrapped in the real response shape and range rules.
+// ===========================================================================
+
+interface FakeRecommendation {
+  id: string
+  userId: string
+  rule: string
+  source: string
+  habitId: string | null
+  habitTitle: string | null
+  message: string
+  reason: string
+  status: 'pending' | 'accepted' | 'dismissed'
+  createdAt: string
+  updatedAt: string
+}
+
+const DEFAULT_BUCKETS: Record<string, string[]> = {
+  sleepHours: ['<6h', '6-7h', '7-8h', '8h+'],
+  mood: ['1', '2', '3', '4', '5'],
+  energy: ['1', '2', '3', '4', '5'],
+  stressLevel: ['1', '2', '3', '4', '5'],
+}
+
+function noData(metric: string) {
+  return {
+    metric,
+    r: null,
+    sampleSize: 0,
+    strength: 'insufficient_data',
+    direction: null,
+    summary: 'Not enough data yet to spot a pattern.',
+    buckets: DEFAULT_BUCKETS[metric].map((label) => ({ label, days: 0, averageCompletionRate: null })),
+  }
+}
+
+function phase2Handlers() {
+  return [
+    http.get(
+      `${API}/insights/correlations`,
+      authed(({ request, today }) => {
+        const url = new URL(request.url)
+        const yesterday = plusDays(today, -1)
+        const qTo = url.searchParams.get('to')
+        const to = qTo && qTo < yesterday ? qTo : yesterday
+        const from = url.searchParams.get('from') ?? plusDays(to, -89)
+        if (daysBetween(from, to) + 1 > 366) {
+          return validationFailed([{ field: 'from', message: 'Range can be at most 366 days' }])
+        }
+        const seeded = state.correlations ?? {}
+        const overall = METRIC_KEYS.map(
+          (m) => (seeded.overall as Body[] | undefined)?.find((o) => o.metric === m) ?? noData(m),
+        )
+        return HttpResponse.json({ minSampleSize: 7, habits: [], highlights: [], ...seeded, from, to, overall })
+      }),
+    ),
+
+    http.get(
+      `${API}/insights/recommendations`,
+      authed(({ request, user }) => {
+        const status = new URL(request.url).searchParams.get('status') ?? 'pending'
+        if (!['pending', 'accepted', 'dismissed', 'all'].includes(status)) {
+          return validationFailed([{ field: 'status', message: 'Invalid option' }])
+        }
+        const recommendations = state.recommendations
+          .filter((r) => r.userId === user.id && (status === 'all' || r.status === status))
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .map(strip)
+        return HttpResponse.json({ recommendations })
+      }),
+    ),
+
+    http.patch(
+      `${API}/insights/recommendations/:id`,
+      authed(({ params, user, body }) => {
+        if (!['accepted', 'dismissed'].includes(body.status)) {
+          return validationFailed([{ field: 'status', message: "Must be 'accepted' or 'dismissed'" }])
+        }
+        const found = state.recommendations.find((r) => r.id === params.id && r.userId === user.id)
+        if (!found) return notFound('Recommendation')
+        found.status = body.status
+        found.updatedAt = new Date().toISOString()
+        return HttpResponse.json({ recommendation: strip(found) })
       }),
     ),
   ]

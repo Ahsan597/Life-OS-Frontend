@@ -22,7 +22,7 @@ describe('routing', () => {
     await user.type(screen.getByLabelText('Email'), 'ahsan@example.com')
     await user.type(screen.getByLabelText('Password'), 'Passw0rd!{Enter}')
 
-    expect(await screen.findByRole('heading', { name: 'Insights is on its way' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Insights' })).toBeInTheDocument()
   })
 
   it.each(['/login', '/register'])('sends a logged-in user from %s to the dashboard', (path) => {
@@ -39,20 +39,13 @@ describe('routing', () => {
     expect(screen.getByRole('heading', { name: /Good (morning|afternoon|evening)/ })).toBeInTheDocument()
   })
 
-  it('shows Coming Soon on /insights (a later phase)', () => {
-    setLoggedIn()
-    renderApp('/insights')
-
-    expect(screen.getByRole('heading', { name: 'Insights is on its way' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Back to dashboard' })).toBeInTheDocument()
-  })
-
   it.each([
     ['/habits', 'Habits'],
     ['/habits/new', 'New habit'],
     ['/check-ins', 'Daily check-in'],
     ['/history', 'Check-in history'],
-  ])('renders the Phase 1 page at %s', async (path, heading) => {
+    ['/insights', 'Insights'],
+  ])('renders the page at %s', async (path, heading) => {
     setLoggedIn()
     renderApp(path)
 
@@ -68,16 +61,16 @@ describe('routing', () => {
 })
 
 describe('app shell', () => {
-  it('marks Dashboard active, enables the Phase 1 items and keeps Insights as "Soon"', () => {
+  it('marks Dashboard active and enables every nav item, Insights included', () => {
     setLoggedIn()
     renderApp('/dashboard')
     const nav = screen.getByRole('navigation', { name: 'Main' })
 
     expect(within(nav).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
-    for (const name of ['Habits', 'Check-in', 'History']) {
-      expect(within(nav).getByRole('link', { name })).toBeInTheDocument()
+    for (const name of ['Habits', 'Check-in', 'History', 'Insights']) {
+      expect(within(nav).getByRole('link', { name })).toHaveAttribute('href', `/${name === 'Check-in' ? 'check-ins' : name.toLowerCase()}`)
     }
-    expect(within(nav).getByRole('link', { name: /^Insights\s*Soon$/ })).toBeInTheDocument()
+    expect(within(nav).queryByText('Soon')).not.toBeInTheDocument()
   })
 
   it('marks Habits active on nested habit pages', () => {

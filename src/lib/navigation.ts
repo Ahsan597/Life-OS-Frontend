@@ -20,7 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/habits', label: 'Habits', icon: ListChecksIcon },
   { to: '/check-ins', label: 'Check-in', icon: SmileIcon },
   { to: '/history', label: 'History', icon: CalendarDaysIcon },
-  { to: '/insights', label: 'Insights', icon: SparklesIcon, soon: true },
+  { to: '/insights', label: 'Insights', icon: SparklesIcon },
 ]
 
 export function isNavItemActive(item: NavItem, pathname: string) {

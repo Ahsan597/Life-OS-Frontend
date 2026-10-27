@@ -12,6 +12,7 @@ import {
   updateHabit,
   updateLog,
 } from '@/api/habits'
+import { invalidateInsights } from '@/hooks/useInsights'
 import type { DateRange, Habit, HabitBase, HabitLog, HabitPayload, HabitUpdate } from '@/types/habit'
 
 /*
@@ -26,6 +27,11 @@ export const habitKeys = {
   detail: (id: string) => ['habits', 'detail', id] as const,
   logs: (id: string) => ['habits', 'detail', id, 'logs'] as const,
   stats: (id: string, range: DateRange) => ['habits', 'detail', id, 'stats', range] as const,
+}
+
+/** After any habit or log write: habit data, plus the insights derived from it */
+function refreshAfterWrite(queryClient: QueryClient) {
+  return Promise.all([queryClient.invalidateQueries({ queryKey: habitKeys.all }), invalidateInsights(queryClient)])
 }
 
 /** Mutations reject with ApiError so forms can read status/details directly */
@@ -59,7 +65,7 @@ export function useCreateHabit() {
   const queryClient = useQueryClient()
   return useMutation<HabitBase, ApiError, HabitPayload>({
     mutationFn: apiCall(createHabit),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: habitKeys.all }),
+    onSuccess: () => refreshAfterWrite(queryClient),
   })
 }
 
@@ -67,7 +73,7 @@ export function useUpdateHabit() {
   const queryClient = useQueryClient()
   return useMutation<HabitBase, ApiError, { id: string; patch: HabitUpdate }>({
     mutationFn: apiCall(({ id, patch }) => updateHabit(id, patch)),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: habitKeys.all }),
+    onSuccess: () => refreshAfterWrite(queryClient),
   })
 }
 
@@ -75,7 +81,7 @@ export function useArchiveHabit() {
   const queryClient = useQueryClient()
   return useMutation<void, ApiError, string>({
     mutationFn: apiCall(archiveHabit),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: habitKeys.all }),
+    onSuccess: () => refreshAfterWrite(queryClient),
   })
 }
 
@@ -125,7 +131,7 @@ export function useLogHabit() {
       context?.snapshot.forEach(([key, data]) => queryClient.setQueryData(key, data))
       toast.error(error.message)
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: habitKeys.all }),
+    onSettled: () => refreshAfterWrite(queryClient),
   })
 }
 
@@ -133,6 +139,6 @@ export function useUpdateLog() {
   const queryClient = useQueryClient()
   return useMutation<HabitLog, ApiError, { logId: string; note: string | null }>({
     mutationFn: apiCall(({ logId, note }) => updateLog(logId, { note })),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: habitKeys.all }),
+    onSuccess: () => refreshAfterWrite(queryClient),
   })
 }

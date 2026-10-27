@@ -16,11 +16,13 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { LoadError } from '@/components/common/LoadError'
 import { HabitCheckButton } from '@/components/habits/HabitCheckButton'
 import { StreakBadge } from '@/components/habits/StreakBadge'
+import { RecommendationCard } from '@/components/insights/RecommendationCard'
 import { buttonVariants } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCheckIn } from '@/hooks/useCheckIns'
 import { useHabits, useLogHabit } from '@/hooks/useHabits'
+import { useRecommendations } from '@/hooks/useInsights'
 import { useNow } from '@/hooks/useNow'
 import { useToday } from '@/hooks/useToday'
 import { METRIC_META, MOOD_COLORS, MOOD_ICONS } from '@/lib/checkIns'
@@ -52,6 +54,7 @@ export function DashboardPage() {
         <TodayHabitsCard />
         <div className="flex flex-col gap-6">
           <CheckInCard />
+          <SuggestionsCard />
           <StreakCard />
         </div>
 
@@ -255,6 +258,43 @@ function CheckInSummary({ checkIn }: { checkIn: CheckIn }) {
         ))}
       </dl>
     </div>
+  )
+}
+
+/** The two newest pending recommendations; the rest live on /insights */
+function SuggestionsCard() {
+  const recommendations = useRecommendations('pending')
+  const top = recommendations.data?.slice(0, 2) ?? []
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-section-title">Suggestions</CardTitle>
+        <CardAction>
+          <Link to="/insights" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
+            See all
+            <ChevronRightIcon />
+          </Link>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        {recommendations.isPending ? (
+          <Skeleton className="h-24 w-full" />
+        ) : recommendations.isError ? (
+          <LoadError error={recommendations.error} onRetry={() => void recommendations.refetch()} />
+        ) : top.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No suggestions right now. Keep logging and they'll show up here.</p>
+        ) : (
+          <ul className="flex flex-col gap-3" aria-label="Suggestions">
+            {top.map((item) => (
+              <li key={item.id}>
+                <RecommendationCard recommendation={item} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

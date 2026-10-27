@@ -125,3 +125,41 @@ describe('DashboardPage – check-in prompt', () => {
     await waitFor(() => expect(fakeBackend.requests()).toContain('GET /checkins/2026-10-21'))
   })
 })
+
+describe('DashboardPage – suggestions', () => {
+  it('shows the two newest pending recommendations and links to the rest', async () => {
+    fakeBackend.seedRecommendation({ message: 'Oldest one', createdAt: '2026-10-15T10:00:00.000Z' })
+    fakeBackend.seedRecommendation({ message: 'Middle one', createdAt: '2026-10-17T10:00:00.000Z' })
+    fakeBackend.seedRecommendation({ message: 'Newest one', createdAt: '2026-10-19T10:00:00.000Z' })
+    fakeBackend.seedRecommendation({ message: 'Already handled', status: 'dismissed', createdAt: '2026-10-20T01:00:00.000Z' })
+    renderApp('/dashboard')
+
+    const list = await screen.findByRole('list', { name: 'Suggestions' })
+    expect(within(list).getAllByRole('article').map((a) => a.getAttribute('aria-label'))).toEqual([
+      'Newest one',
+      'Middle one',
+    ])
+    expect(screen.getByRole('link', { name: 'See all' })).toHaveAttribute('href', '/insights')
+  })
+
+  it('accepts a suggestion from the dashboard', async () => {
+    const rec = fakeBackend.seedRecommendation({ message: 'Try a shorter session' })
+    const { user } = renderApp('/dashboard')
+
+    const card = await screen.findByRole('article', { name: 'Try a shorter session' })
+    await user.click(within(card).getByRole('button', { name: 'Accept' }))
+
+    expect(await screen.findByText(/No suggestions right now/)).toBeInTheDocument()
+    expect(fakeBackend.recommendation(rec.id)?.status).toBe('accepted')
+  })
+
+  it('refetches suggestions after a habit is ticked off', async () => {
+    fakeBackend.seedHabit({ title: 'Read' })
+    const { user } = renderApp('/dashboard')
+    await screen.findByText(/No suggestions right now/)
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Read' }))
+
+    await waitFor(() => expect(fakeBackend.count('GET /insights/recommendations?status=pending')).toBe(2))
+  })
+})

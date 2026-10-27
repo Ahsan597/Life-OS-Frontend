@@ -20,12 +20,14 @@ import { StatTile } from '@/components/common/StatTile'
 import { ArchiveHabitDialog } from '@/components/habits/ArchiveHabitDialog'
 import { CalendarHeatmap } from '@/components/habits/CalendarHeatmap'
 import { LogHistory } from '@/components/habits/LogHistory'
+import { RecommendationCard } from '@/components/insights/RecommendationCard'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useHabit, useHabitLogs, useHabitStats, useLogHabit, useUpdateHabit } from '@/hooks/useHabits'
+import { useRecommendations } from '@/hooks/useInsights'
 import { addDays, weekStart } from '@/lib/dates'
 import { buildHeatmap, formatRate, habitStartDate, scheduleLabel, streakUnit, type HeatmapCell } from '@/lib/habits'
 import { useAuthStore } from '@/store/authStore'
@@ -58,6 +60,8 @@ function HabitDetail({ habit }: { habit: Habit }) {
   const stats = useHabitStats(habit.id, range)
   const logHabit = useLogHabit()
   const restore = useUpdateHabit()
+  const recommendations = useRecommendations('pending')
+  const habitRecommendations = recommendations.data?.filter((item) => item.habitId === habit.id) ?? []
   const [archiving, setArchiving] = useState(false)
 
   const heatmap = logs.data
@@ -106,6 +110,16 @@ function HabitDetail({ habit }: { habit: Habit }) {
       />
 
       {habit.description ? <p className="max-w-3xl whitespace-pre-line">{habit.description}</p> : null}
+
+      {habitRecommendations.length > 0 ? (
+        <ul className="flex flex-col gap-3" aria-label="Suggestions for this habit">
+          {habitRecommendations.map((item) => (
+            <li key={item.id}>
+              <RecommendationCard recommendation={item} showHabit={false} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       {habit.isActive ? null : (
         <Alert>

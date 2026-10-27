@@ -168,4 +168,20 @@ describe('HabitDetailPage', () => {
     expect(await screen.findByText('Habit not found')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Back to habits' })).toBeInTheDocument()
   })
+
+  it('shows a pending recommendation for this habit as a banner', async () => {
+    const habit = seedReadingHabit()
+    fakeBackend.seedRecommendation({ habitId: habit.id, habitTitle: 'Read', message: 'Try 5 pages for now.' })
+    fakeBackend.seedRecommendation({ habitId: '999', habitTitle: 'Gym', message: 'Not about this habit' })
+    const { user } = renderApp(`/habits/${habit.id}`)
+
+    const banner = await screen.findByRole('list', { name: 'Suggestions for this habit' })
+    const card = within(banner).getByRole('article', { name: 'Try 5 pages for now.' })
+    expect(within(card).queryByRole('link', { name: 'Read' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Not about this habit')).not.toBeInTheDocument()
+
+    await user.click(within(card).getByRole('button', { name: 'Dismiss' }))
+
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Suggestions for this habit' })).not.toBeInTheDocument())
+  })
 })

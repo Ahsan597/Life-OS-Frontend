@@ -4,11 +4,11 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { CheckInHistoryPage } from '@/pages/CheckInHistoryPage'
 import { CheckInPage } from '@/pages/CheckInPage'
-import { ComingSoonPage } from '@/pages/ComingSoonPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { HabitDetailPage } from '@/pages/HabitDetailPage'
 import { EditHabitPage, NewHabitPage } from '@/pages/HabitFormPage'
 import { HabitsPage } from '@/pages/HabitsPage'
+import { InsightsPage } from '@/pages/InsightsPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { RegisterPage } from '@/pages/RegisterPage'
@@ -41,8 +41,7 @@ function App() {
           <Route path="/habits/:id/edit" element={<EditHabitPage />} />
           <Route path="/check-ins" element={<CheckInPage />} />
           <Route path="/history" element={<CheckInHistoryPage />} />
-          {/* Later phases: placeholder until the backend ships them */}
-          <Route path="/insights" element={<ComingSoonPage />} />
+          <Route path="/insights" element={<InsightsPage />} />
         </Route>
       </Route>
 
