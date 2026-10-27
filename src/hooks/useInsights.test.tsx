@@ -3,8 +3,9 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useSaveCheckIn } from '@/hooks/useCheckIns'
-import { useCreateHabit, useLogHabit } from '@/hooks/useHabits'
+import { useArchiveHabit, useCreateHabit, useLogHabit } from '@/hooks/useHabits'
 import { insightKeys } from '@/hooks/useInsights'
+import { predictionKeys } from '@/hooks/usePredictions'
 import { fakeBackend } from '@/test/fakeBackend'
 import { setLoggedIn } from '@/test/renderApp'
 import { TODAY, freezeTime } from '@/test/time'
@@ -58,5 +59,47 @@ describe('insights cache refresh', () => {
     act(() => result.current.mutate({ title: 'Stretch', description: null, frequency: 'daily' }))
 
     await waitFor(() => expect(isStale()).toEqual([true, true]))
+  })
+})
+
+describe('streak-risk cache refresh', () => {
+  function setupForecasts() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    queryClient.setQueryData(predictionKeys.streakRisk, { date: TODAY, modelVersion: 'x', habits: [] })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    return { wrapper, isStale: () => queryClient.getQueryState(predictionKeys.streakRisk)?.isInvalidated }
+  }
+
+  it('invalidates forecasts after a habit log', async () => {
+    const habit = fakeBackend.seedHabit()
+    const { wrapper, isStale } = setupForecasts()
+    const { result } = renderHook(() => useLogHabit(), { wrapper })
+
+    act(() => result.current.mutate({ habitId: habit.id, date: TODAY, completed: true }))
+
+    await waitFor(() => expect(isStale()).toBe(true))
+  })
+
+  it('invalidates forecasts after a check-in (the check-in factor)', async () => {
+    const { wrapper, isStale } = setupForecasts()
+    const { result } = renderHook(() => useSaveCheckIn(), { wrapper })
+
+    act(() =>
+      result.current.mutate({ date: TODAY, mood: null, energy: null, sleepHours: 5, stressLevel: null, note: null }),
+    )
+
+    await waitFor(() => expect(isStale()).toBe(true))
+  })
+
+  it('invalidates forecasts after archiving a habit', async () => {
+    const habit = fakeBackend.seedHabit()
+    const { wrapper, isStale } = setupForecasts()
+    const { result } = renderHook(() => useArchiveHabit(), { wrapper })
+
+    act(() => result.current.mutate(habit.id))
+
+    await waitFor(() => expect(isStale()).toBe(true))
   })
 })

@@ -7,11 +7,13 @@ import { LoadError } from '@/components/common/LoadError'
 import { PageHeader } from '@/components/common/PageHeader'
 import { ArchiveHabitDialog } from '@/components/habits/ArchiveHabitDialog'
 import { StreakBadge } from '@/components/habits/StreakBadge'
+import { RiskBadge } from '@/components/predictions/ForecastParts'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useHabits, useUpdateHabit } from '@/hooks/useHabits'
+import { useStreakRisk } from '@/hooks/usePredictions'
 import { scheduleLabel } from '@/lib/habits'
 import type { Habit } from '@/types/habit'
 
@@ -102,6 +104,8 @@ export function HabitsPage() {
 
 function HabitRow({ habit, onArchive }: { habit: Habit; onArchive?: () => void }) {
   const update = useUpdateHabit()
+  // One shared streak-risk query for the whole list, joined here by id.
+  const { byHabit } = useStreakRisk()
 
   function restore() {
     update.mutate(
@@ -134,6 +138,9 @@ function HabitRow({ habit, onArchive }: { habit: Habit; onArchive?: () => void }
                 : ''}
             </span>
           </Link>
+          {habit.isActive ? (
+            <RiskBadge forecast={byHabit.get(habit.id)} today={habit.today.date} doneToday={habit.today.completed} />
+          ) : null}
           <StreakBadge frequency={habit.frequency} streak={habit.currentStreak} />
           <div className="flex gap-1">
             {habit.isActive ? (

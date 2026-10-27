@@ -5,6 +5,7 @@ import { BucketChart } from '@/components/charts/BucketChart'
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadError } from '@/components/common/LoadError'
 import { PageHeader } from '@/components/common/PageHeader'
+import { Segmented } from '@/components/common/Segmented'
 import { CorrelationBar, StrengthBadge } from '@/components/insights/CorrelationRow'
 import { RecommendationCard } from '@/components/insights/RecommendationCard'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,7 +23,7 @@ import {
 } from '@/lib/insights'
 import { cn } from '@/lib/utils'
 import type { Metric } from '@/types/checkIn'
-import type { Correlations, Highlight } from '@/types/insights'
+import type { Correlations, Highlight, RecommendationSort } from '@/types/insights'
 
 export function InsightsPage() {
   const today = useToday()
@@ -53,7 +54,17 @@ export function InsightsPage() {
             label="Date range"
             value={days}
             options={INSIGHT_RANGES.map((n) => ({ value: n, label: `${n} days` }))}
-            onChange={(n) => setParams(n === DEFAULT_INSIGHT_RANGE ? {} : { days: String(n) }, { replace: true })}
+            onChange={(n) =>
+              setParams(
+                (current) => {
+                  const updated = new URLSearchParams(current)
+                  if (n === DEFAULT_INSIGHT_RANGE) updated.delete('days')
+                  else updated.set('days', String(n))
+                  return updated
+                },
+                { replace: true },
+              )
+            }
           />
         </div>
 
@@ -81,9 +92,24 @@ export function InsightsPage() {
 }
 
 function RecommendationsSection() {
+  const [params, setParams] = useSearchParams()
   const [view, setView] = useState<'pending' | 'history'>('pending')
-  const pending = useRecommendations('pending')
-  const all = useRecommendations('all', { enabled: view === 'history' })
+  const sort: RecommendationSort = params.get('sort') === 'recent' ? 'recent' : 'rank'
+  // Rendered in the order received: the server ranks them.
+  const pending = useRecommendations('pending', { sort })
+  const all = useRecommendations('all', { sort, enabled: view === 'history' })
+
+  function changeSort(next: RecommendationSort) {
+    setParams(
+      (current) => {
+        const updated = new URLSearchParams(current)
+        if (next === 'rank') updated.delete('sort')
+        else updated.set('sort', next)
+        return updated
+      },
+      { replace: true },
+    )
+  }
   const query = view === 'pending' ? pending : all
   const items = view === 'pending' ? query.data : query.data?.filter((item) => item.status !== 'pending')
 
@@ -94,7 +120,16 @@ function RecommendationsSection() {
           <h2>Recommendations</h2>
         </CardTitle>
         <CardDescription>Suggestions based on your recent habits and check-ins.</CardDescription>
-        <CardAction>
+        <CardAction className="flex flex-wrap justify-end gap-2">
+          <Segmented
+            label="Sort recommendations"
+            value={sort}
+            options={[
+              { value: 'rank', label: 'Most relevant' },
+              { value: 'recent', label: 'Newest' },
+            ]}
+            onChange={changeSort}
+          />
           <Segmented
             label="Recommendations view"
             value={view}
@@ -127,9 +162,13 @@ function RecommendationsSection() {
           )
         ) : (
           <ul className="flex flex-col gap-3" aria-label={view === 'pending' ? 'Pending recommendations' : 'Past recommendations'}>
-            {items.map((item) => (
+            {items.map((item, index) => (
               <li key={item.id}>
-                <RecommendationCard recommendation={item} readOnly={view === 'history'} />
+                <RecommendationCard
+                  recommendation={item}
+                  readOnly={view === 'history'}
+                  featured={view === 'pending' && sort === 'rank' && index === 0 && item.priority === 'high'}
+                />
               </li>
             ))}
           </ul>
@@ -280,33 +319,5 @@ function PerHabitCard({ data }: { data: Correlations }) {
         )}
       </CardContent>
     </Card>
-  )
-}
-
-interface SegmentedProps<T extends string | number> {
-  label: string
-  value: T
-  options: { value: T; label: string }[]
-  onChange: (value: T) => void
-}
-
-function Segmented<T extends string | number>({ label, value, options, onChange }: SegmentedProps<T>) {
-  return (
-    <div role="group" aria-label={label} className="flex w-fit flex-wrap gap-1 rounded-lg bg-muted p-1">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-pressed={option.value === value}
-          onClick={() => onChange(option.value)}
-          className={cn(
-            'h-8 cursor-pointer rounded-md px-3 text-sm font-medium transition-colors duration-150 outline-none focus-visible:ring-3 focus-visible:ring-focus-ring',
-            option.value === value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
   )
 }

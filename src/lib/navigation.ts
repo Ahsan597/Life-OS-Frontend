@@ -4,6 +4,7 @@ import {
   ListChecksIcon,
   SmileIcon,
   SparklesIcon,
+  TrendingUpIcon,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -21,6 +22,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/check-ins', label: 'Check-in', icon: SmileIcon },
   { to: '/history', label: 'History', icon: CalendarDaysIcon },
   { to: '/insights', label: 'Insights', icon: SparklesIcon },
+  { to: '/predictions', label: 'Forecasts', icon: TrendingUpIcon },
 ]
 
 export function isNavItemActive(item: NavItem, pathname: string) {

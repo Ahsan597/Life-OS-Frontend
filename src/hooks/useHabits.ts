@@ -13,6 +13,7 @@ import {
   updateLog,
 } from '@/api/habits'
 import { invalidateInsights } from '@/hooks/useInsights'
+import { invalidateForecasts } from '@/hooks/usePredictions'
 import type { DateRange, Habit, HabitBase, HabitLog, HabitPayload, HabitUpdate } from '@/types/habit'
 
 /*
@@ -29,9 +30,13 @@ export const habitKeys = {
   stats: (id: string, range: DateRange) => ['habits', 'detail', id, 'stats', range] as const,
 }
 
-/** After any habit or log write: habit data, plus the insights derived from it */
+/** After any habit or log write: habit data, plus the insights and forecasts derived from it */
 function refreshAfterWrite(queryClient: QueryClient) {
-  return Promise.all([queryClient.invalidateQueries({ queryKey: habitKeys.all }), invalidateInsights(queryClient)])
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: habitKeys.all }),
+    invalidateInsights(queryClient),
+    invalidateForecasts(queryClient),
+  ])
 }
 
 /** Mutations reject with ApiError so forms can read status/details directly */

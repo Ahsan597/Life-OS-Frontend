@@ -45,6 +45,7 @@ describe('routing', () => {
     ['/check-ins', 'Daily check-in'],
     ['/history', 'Check-in history'],
     ['/insights', 'Insights'],
+    ['/predictions', /^Forecasts for /],
   ])('renders the page at %s', async (path, heading) => {
     setLoggedIn()
     renderApp(path)
@@ -67,8 +68,14 @@ describe('app shell', () => {
     const nav = screen.getByRole('navigation', { name: 'Main' })
 
     expect(within(nav).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
-    for (const name of ['Habits', 'Check-in', 'History', 'Insights']) {
-      expect(within(nav).getByRole('link', { name })).toHaveAttribute('href', `/${name === 'Check-in' ? 'check-ins' : name.toLowerCase()}`)
+    for (const [name, href] of [
+      ['Habits', '/habits'],
+      ['Check-in', '/check-ins'],
+      ['History', '/history'],
+      ['Insights', '/insights'],
+      ['Forecasts', '/predictions'],
+    ]) {
+      expect(within(nav).getByRole('link', { name })).toHaveAttribute('href', href)
     }
     expect(within(nav).queryByText('Soon')).not.toBeInTheDocument()
   })

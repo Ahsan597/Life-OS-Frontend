@@ -8,6 +8,7 @@ import {
   PencilIcon,
   PlusIcon,
   SmilePlusIcon,
+  TriangleAlertIcon,
   UserIcon,
   type LucideIcon,
 } from 'lucide-react'
@@ -17,6 +18,7 @@ import { LoadError } from '@/components/common/LoadError'
 import { HabitCheckButton } from '@/components/habits/HabitCheckButton'
 import { StreakBadge } from '@/components/habits/StreakBadge'
 import { RecommendationCard } from '@/components/insights/RecommendationCard'
+import { RiskBadge } from '@/components/predictions/ForecastParts'
 import { buttonVariants } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -24,10 +26,12 @@ import { useCheckIn } from '@/hooks/useCheckIns'
 import { useHabits, useLogHabit } from '@/hooks/useHabits'
 import { useRecommendations } from '@/hooks/useInsights'
 import { useNow } from '@/hooks/useNow'
+import { useStreakRisk } from '@/hooks/usePredictions'
 import { useToday } from '@/hooks/useToday'
 import { METRIC_META, MOOD_COLORS, MOOD_ICONS } from '@/lib/checkIns'
 import { formatLongDate, formatMonthDayYear, getGreeting, getHourInTimeZone } from '@/lib/datetime'
 import { formatStreak, scheduleLabel } from '@/lib/habits'
+import { formatPercent, riskBadgeKind } from '@/lib/predictions'
 import { useAuthStore } from '@/store/authStore'
 import type { CheckIn } from '@/types/checkIn'
 import type { Habit } from '@/types/habit'
@@ -49,6 +53,8 @@ export function DashboardPage() {
         </h1>
         <p className="text-muted-foreground">{formatLongDate(now, user.timezone)}</p>
       </header>
+
+      <AtRiskStrip />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <TodayHabitsCard />
@@ -80,9 +86,48 @@ export function DashboardPage() {
   )
 }
 
+/** High-risk streaks whose period is still open today; hidden when there are none */
+function AtRiskStrip() {
+  const streakRisk = useStreakRisk()
+  const habits = useHabits()
+  const doneToday = new Set(habits.data?.filter((habit) => habit.today.completed).map((habit) => habit.id))
+  const atRisk = (streakRisk.data?.habits ?? []).filter(
+    (forecast) => riskBadgeKind(forecast, { doneToday: doneToday.has(forecast.habitId) }) === 'at_risk',
+  )
+  if (atRisk.length === 0) return null
+
+  return (
+    <section
+      aria-labelledby="at-risk-heading"
+      className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive-soft/60 px-4 py-3"
+    >
+      <h2 id="at-risk-heading" className="flex items-center gap-2 text-sm font-semibold">
+        <TriangleAlertIcon className="size-4 text-destructive" aria-hidden="true" />
+        Streaks at risk today
+      </h2>
+      <ul className="flex flex-wrap gap-2" aria-label="Streaks at risk today">
+        {atRisk.map((forecast) => (
+          <li key={forecast.habitId}>
+            <Link
+              to={`/habits/${forecast.habitId}`}
+              className="inline-flex items-center gap-1.5 rounded-full bg-card px-3 py-1 text-[13px] font-medium shadow-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-focus-ring"
+            >
+              {forecast.title}
+              <span className="text-muted-foreground">
+                {forecast.currentStreak > 0 ? `· 🔥 ${forecast.currentStreak} · ` : '· '}~{formatPercent(forecast.riskScore)} miss chance
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 function TodayHabitsCard() {
   const habits = useHabits()
   const logHabit = useLogHabit()
+  const { byHabit } = useStreakRisk()
 
   const all = habits.data ?? []
   const scheduled = all.filter((habit) => habit.today.scheduled)
@@ -155,6 +200,7 @@ function TodayHabitsCard() {
                       </span>
                       <span className="text-[13px] text-muted-foreground">{scheduleLabel(habit)}</span>
                     </Link>
+                    <RiskBadge forecast={byHabit.get(habit.id)} today={habit.today.date} doneToday={habit.today.completed} />
                     <StreakBadge frequency={habit.frequency} streak={habit.currentStreak} />
                   </li>
                 ))}

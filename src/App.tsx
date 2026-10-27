@@ -11,6 +11,7 @@ import { HabitsPage } from '@/pages/HabitsPage'
 import { InsightsPage } from '@/pages/InsightsPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
+import { PredictionsPage } from '@/pages/PredictionsPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { GuestRoute } from '@/routes/GuestRoute'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
@@ -42,6 +43,7 @@ function App() {
           <Route path="/check-ins" element={<CheckInPage />} />
           <Route path="/history" element={<CheckInHistoryPage />} />
           <Route path="/insights" element={<InsightsPage />} />
+          <Route path="/predictions" element={<PredictionsPage />} />
         </Route>
       </Route>
 

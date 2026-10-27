@@ -1,7 +1,7 @@
 import { http, HttpResponse, type PathParams } from 'msw'
 
 /*
- * In-memory fake of the backend API (Phase 0 auth, Phase 1 habits/check-ins, Phase 2 insights), used by MSW in tests.
+ * In-memory fake of the backend API (Phase 0 auth, Phase 1 habits/check-ins, Phase 2 insights, Phase 3 predictions), used by MSW in tests.
  * It mirrors the real contract, including refresh-token rotation and reuse
  * detection: sending an already-used refresh token revokes all of that user's
  * sessions and sets `reuseDetected`, so tests can assert the frontend never does it.
@@ -30,6 +30,8 @@ const state = {
   checkIns: [] as FakeCheckIn[],
   recommendations: [] as FakeRecommendation[],
   correlations: null as Partial<Body> | null,
+  forecasts: new Map<string, Body>(),
+  accuracy: null as Partial<Body> | null,
   accessTokens: new Map<string, string>(),
   refreshTokens: new Map<string, RefreshRecord>(),
   requests: [] as string[],
@@ -70,6 +72,8 @@ export const fakeBackend = {
     state.checkIns = []
     state.recommendations = []
     state.correlations = null
+    state.forecasts.clear()
+    state.accuracy = null
     state.accessTokens.clear()
     state.refreshTokens.clear()
     state.requests = []
@@ -170,6 +174,9 @@ export const fakeBackend = {
       status: 'pending',
       createdAt: `2026-10-${String(10 + state.recommendations.length).padStart(2, '0')}T10:00:00.000Z`,
       updatedAt: '2026-10-10T10:00:00.000Z',
+      score: 50,
+      priority: 'medium',
+      scoreFactors: { ruleWeight: 1, habitRisk: 1, feedback: 1, freshness: 1 },
       ...fields,
     }
     state.recommendations.push(recommendation)
@@ -177,6 +184,20 @@ export const fakeBackend = {
   },
 
   recommendation: (id: string) => state.recommendations.find((r) => r.id === id),
+
+  /**
+   * The forecasting model lives in the backend; tests seed each habit's forecast.
+   * Unseeded active habits come back as insufficient_data. Like the real server, once
+   * the open period is logged the forecast moves on to the next one (current: false).
+   */
+  seedForecast(habitId: string, fields: Partial<Body> = {}) {
+    state.forecasts.set(habitId, fields)
+  },
+
+  /** Backtest results; anything left out comes back as "nothing evaluated yet" */
+  seedAccuracy(fields: Partial<Body>) {
+    state.accuracy = fields
+  },
   habit: (id: string) => state.habits.find((h) => h.id === id),
   logs: () => state.logs.map((l) => ({ ...l })),
   checkIns: () => state.checkIns.map((c) => ({ ...c })),
@@ -187,6 +208,7 @@ export const fakeBackend = {
 export const handlers = [
   ...phase1Handlers(),
   ...phase2Handlers(),
+  ...phase3Handlers(),
   http.get(`${API}/health`, () => HttpResponse.json({ status: 'ok', database: 'connected' })),
 
   http.post(`${API}/auth/register`, async ({ request }) => {
@@ -757,6 +779,9 @@ interface FakeRecommendation {
   status: 'pending' | 'accepted' | 'dismissed'
   createdAt: string
   updatedAt: string
+  score: number | null
+  priority: string | null
+  scoreFactors: Record<string, number> | null
 }
 
 const DEFAULT_BUCKETS: Record<string, string[]> = {
@@ -802,14 +827,29 @@ function phase2Handlers() {
     http.get(
       `${API}/insights/recommendations`,
       authed(({ request, user }) => {
-        const status = new URL(request.url).searchParams.get('status') ?? 'pending'
+        const url = new URL(request.url)
+        const status = url.searchParams.get('status') ?? 'pending'
+        const sort = url.searchParams.get('sort') ?? 'rank'
         if (!['pending', 'accepted', 'dismissed', 'all'].includes(status)) {
           return validationFailed([{ field: 'status', message: 'Invalid option' }])
         }
+        if (!['rank', 'recent'].includes(sort)) return validationFailed([{ field: 'sort', message: 'Invalid option' }])
+        const newest = (a: FakeRecommendation, b: FakeRecommendation) => b.createdAt.localeCompare(a.createdAt)
+        // rank: pending by score (highest first), then the rest newest first
+        const ranked = (a: FakeRecommendation, b: FakeRecommendation) =>
+          a.status === 'pending' && b.status === 'pending'
+            ? (b.score ?? 0) - (a.score ?? 0)
+            : a.status === 'pending'
+              ? -1
+              : b.status === 'pending'
+                ? 1
+                : newest(a, b)
         const recommendations = state.recommendations
           .filter((r) => r.userId === user.id && (status === 'all' || r.status === status))
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .sort(sort === 'rank' ? ranked : newest)
           .map(strip)
+          // Score fields only exist while pending.
+          .map((r) => (r.status === 'pending' ? r : { ...r, score: null, priority: null, scoreFactors: null }))
         return HttpResponse.json({ recommendations })
       }),
     ),
@@ -825,6 +865,99 @@ function phase2Handlers() {
         found.status = body.status
         found.updatedAt = new Date().toISOString()
         return HttpResponse.json({ recommendation: strip(found) })
+      }),
+    ),
+  ]
+}
+
+// ===========================================================================
+// Phase 3: predictions (streak-risk forecasts + backtest accuracy)
+//
+// Forecasts and accuracy are seeded by tests; the fake applies the contract's
+// rules around them: active habits only, riskiest first with insufficient_data
+// last, the target moving on once the open period is logged, and the range
+// rules for /accuracy.
+// ===========================================================================
+
+function defaultForecast(habit: FakeHabit, today: string) {
+  const weekly = habit.frequency === 'weekly'
+  return {
+    currentStreak: 0,
+    target: { period: weekly ? 'week' : 'day', date: weekly ? monday(today) : today, current: true },
+    completionProbability: 0.5,
+    riskScore: 0.5,
+    riskLevel: 'insufficient_data',
+    confidence: 'low',
+    factors: [],
+  }
+}
+
+function forecastFor(habit: FakeHabit, today: string): Body {
+  const forecast: Body = { ...defaultForecast(habit, today), ...state.forecasts.get(habit.id) }
+  const weekly = forecast.target.period === 'week'
+  const done = state.logs.some(
+    (l) => l.habitId === habit.id && l.completed && (weekly ? monday(l.date) === monday(today) : l.date === today),
+  )
+  if (forecast.target.current && done) {
+    forecast.target = {
+      period: forecast.target.period,
+      date: weekly ? plusDays(monday(today), 7) : plusDays(today, 1),
+      current: false,
+    }
+  }
+  return {
+    habitId: habit.id,
+    title: habit.title,
+    frequency: habit.frequency,
+    ...forecast,
+    modelVersion: 'heuristic_v1',
+  }
+}
+
+function emptyAccuracyRow(key: string, value: string) {
+  return { [key]: value, predictions: 0, averagePredictedRisk: null, observedMissRate: null }
+}
+
+function phase3Handlers() {
+  return [
+    http.get(
+      `${API}/predictions/streak-risk`,
+      authed(({ user, today }) => {
+        const habits = state.habits
+          .filter((h) => h.userId === user.id && h.isActive)
+          .map((h) => forecastFor(h, today))
+          .sort((a, b) => {
+            const unknown = (f: Body) => (f.riskLevel === 'insufficient_data' ? 1 : 0)
+            return unknown(a) - unknown(b) || b.riskScore - a.riskScore
+          })
+        return HttpResponse.json({ date: today, modelVersion: 'heuristic_v1', habits })
+      }),
+    ),
+
+    http.get(
+      `${API}/predictions/accuracy`,
+      authed(({ request, today }) => {
+        const url = new URL(request.url)
+        const yesterday = plusDays(today, -1)
+        const qTo = url.searchParams.get('to')
+        const to = qTo && qTo < yesterday ? qTo : yesterday
+        const from = url.searchParams.get('from') ?? plusDays(to, -29)
+        if (daysBetween(from, to) + 1 > 366) {
+          return validationFailed([{ field: 'from', message: 'Range can be at most 366 days' }])
+        }
+        return HttpResponse.json({
+          modelVersion: 'heuristic_v1',
+          evaluated: 0,
+          observedMissRate: null,
+          brierScore: null,
+          baselineBrierScore: null,
+          brierSkillScore: null,
+          byRiskLevel: ['low', 'medium', 'high'].map((level) => emptyAccuracyRow('riskLevel', level)),
+          calibration: ['0-20%', '20-40%', '40-60%', '60-80%', '80-100%'].map((b) => emptyAccuracyRow('bucket', b)),
+          ...state.accuracy,
+          from,
+          to,
+        })
       }),
     ),
   ]

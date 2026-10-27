@@ -29,6 +29,13 @@ Phase 2 - insights (see PHASE 2 below):
 - Insights page: recommendations feed (accept / dismiss, history), key
   findings, completion-by-metric bar chart, per-habit correlations.
 - Dashboard "Suggestions" card and a recommendation banner on habit detail.
+Phase 3 - prediction + smarter recommendations (see PHASE 3 below):
+- Streak-risk badges on the dashboard and habits list, a "Streaks at risk
+  today" strip, and a Forecast card on habit detail.
+- Forecasts page (/predictions): per-habit forecasts plus "How accurate are
+  these?" (headline, calibration chart, Brier score).
+- Recommendations are ranked by the server, with priority badges, "Why am I
+  seeing this?" and a Most relevant / Newest toggle.
 
 IMPORTANT LIBRARIES / TOOLS USED (and why)
 --------------------------------------------
@@ -196,6 +203,62 @@ Rules the UI depends on:
   log or check-in write also invalidates ['recommendations'] and
   ['correlations'] (useHabits refreshAfterWrite, useSaveCheckIn).
 
+PHASE 3 - PREDICTIONS + RANKED RECOMMENDATIONS
+-------------------------------------------------
+The backend forecasts which streaks are likely to break and backtests itself.
+The frontend never computes a risk: it only shows what the API returns.
+
+Routes / UI:
+  /dashboard          "Streaks at risk today" strip (high risk, open period);
+                      At risk / Watch badge on each habit row
+  /habits             the same badge on each active habit card
+  /habits/:id         Forecast card: chance, target day, risk chip, confidence,
+                      reasons; "Log this habit..." when insufficient_data
+  /predictions        "Forecasts" in the sidebar. Forecast cards in API order
+                      (riskiest first), "Still learning" group, check-in nudge,
+                      accuracy section (?days=90 / ?days=180; 30 is default)
+  /insights           ?sort=recent switches the feed to newest first
+
+Endpoints (src/api/predictions.ts, hooks in src/hooks/usePredictions.ts):
+  GET /predictions/streak-risk            key ['streakRisk'], staleTime 60s,
+                                          refetch on window focus
+  GET /predictions/accuracy?from=&to=     key ['predictionAccuracy', from, to],
+                                          staleTime 10 min
+  GET /insights/recommendations?status=&sort=rank|recent
+                                          key ['recommendations', status, sort]
+
+Rules the UI depends on:
+- ONE streak-risk request; useStreakRisk() also returns byHabit (a Map by
+  habitId) so cards join it client-side. Never a request per card.
+- Badge (lib/predictions.ts riskBadgeKind): high + target.current = "At risk"
+  ("🔥 5 at risk" when there is a streak), medium + current = "Watch",
+  everything else nothing. A habit already ticked off today never shows a
+  badge, so it disappears at once, before the refetch moves the target on.
+- insufficient_data never shows a percentage or risk badge ("Not enough history
+  yet" / "Still learning").
+- Copy is a tendency: "~91% chance of a miss today", "Based on your recent
+  pattern". Factor `detail` is shown as written; `effect` picks the arrow
+  (up red = raises risk, down green = lowers risk).
+- Percentages: Math.round(x * 100) + '%', null -> "—" (formatPercent).
+- Accuracy ranges are computed from the server's `date` (streak-risk response),
+  end yesterday and are capped at 366 days. Calibration bands with 0
+  predictions are left out of the chart.
+- Recommendations render in the order received (sort=rank by default); never
+  re-sort on the client. The first card is "featured" only when it is high
+  priority. "Why am I seeing this?" lists only scoreFactors more than 0.05
+  from 1 (lib/predictions.ts scoreFactorReasons). Dismissing toasts "Got it.
+  We'll show fewer tips like this." streak_at_risk gets a flame + warning icon
+  and a "Go to habit" button.
+- Invalidation: every habit/log/check-in write also invalidates ['streakRisk']
+  (useHabits refreshAfterWrite, useSaveCheckIn), plus ['recommendations'] and
+  ['correlations'] as in Phase 2.
+- Differences from the Phase 3 spec, to match this codebase: charts are
+  hand-drawn SVG like the rest of the app (Recharts isn't installed); types
+  live in src/types/predictions.ts (no src/api/types.ts); errors go through
+  toApiError/LoadError (there is no getErrorMessage); the check-in route is
+  /check-ins and its query key is ['checkins', 'day', date]. A Popover
+  component (components/ui/popover.tsx, Base UI) was added for the badges.
+
 THEME ("Calm Focus")
 ----------------------
 - src/index.css maps the Calm Focus palette onto shadcn's variables (so all
@@ -233,6 +296,11 @@ Vitest (Jest-compatible API: describe/it/expect, vi.fn() instead of jest.fn())
     API (seedRecommendation(), recommendation()); correlations are NOT
     computed - tests seedCorrelations() with the parts they need and anything
     missing comes back as "not enough data".
+  - Phase 3 predictions: seedForecast(habitId, fields) and seedAccuracy();
+    unseeded habits come back as insufficient_data, forecasts are sorted
+    riskiest first, and logging the open period moves the target on
+    (current: false), like the real server. Recommendations take score /
+    priority / scoreFactors and honour ?sort=rank|recent.
 - src/test/time.ts: freezeTime() fixes the clock to Tue 2026-10-20 (Date only;
   timers stay real). The fake backend derives "today" from it, like the server.
 - src/test/renderApp.tsx renders the whole app at a route, with
@@ -252,6 +320,7 @@ npx shadcn@latest add <component>   add another shadcn/ui component
 
 STATUS / NEXT STEPS
 ----------------------
-Phase 0, Phase 1 and Phase 2 frontend are done and tested (281 tests). Next is
-Phase 3; build it once the backend ships the matching endpoints. The nav still
+Phase 0, 1, 2 and 3 frontend are done and tested (324 tests). Next is Phase 4
+(notifications/reminders, export, settings); build it once the backend ships
+the matching endpoints. The nav still
 supports `soon: true` and ComingSoonPage for any later placeholder routes.

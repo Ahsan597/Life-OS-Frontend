@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { toApiError, type ApiError } from '@/api/client'
 import { getCorrelations, listRecommendations, updateRecommendation } from '@/api/insights'
 import type { DateRange } from '@/types/habit'
-import type { Recommendation, RecommendationStatus } from '@/types/insights'
+import type { Recommendation, RecommendationSort, RecommendationStatus } from '@/types/insights'
 
 type StatusFilter = RecommendationStatus | 'all'
 
@@ -11,7 +11,8 @@ export const insightKeys = {
   correlationsAll: ['correlations'] as const,
   correlations: (from?: string, to?: string) => ['correlations', from, to] as const,
   recommendationsAll: ['recommendations'] as const,
-  recommendations: (status: StatusFilter) => ['recommendations', status] as const,
+  recommendationsByStatus: (status: StatusFilter) => ['recommendations', status] as const,
+  recommendations: (status: StatusFilter, sort: RecommendationSort = 'rank') => ['recommendations', status, sort] as const,
 }
 
 /** Insights are derived from habits and check-ins, so every write to those refreshes them */
@@ -31,8 +32,16 @@ export function useCorrelations(range: Required<DateRange>) {
   })
 }
 
-export function useRecommendations(status: StatusFilter = 'pending', { enabled = true } = {}) {
-  return useQuery({ queryKey: insightKeys.recommendations(status), queryFn: () => listRecommendations(status), enabled })
+/** Ranked by the server by default: render in the order received, never re-sort */
+export function useRecommendations(
+  status: StatusFilter = 'pending',
+  { sort = 'rank', enabled = true }: { sort?: RecommendationSort; enabled?: boolean } = {},
+) {
+  return useQuery({
+    queryKey: insightKeys.recommendations(status, sort),
+    queryFn: () => listRecommendations(status, sort),
+    enabled,
+  })
 }
 
 type Snapshot = [readonly unknown[], unknown][]
@@ -55,14 +64,19 @@ export function useUpdateRecommendation() {
     },
     onMutate: async ({ id }) => {
       await queryClient.cancelQueries({ queryKey: insightKeys.recommendationsAll })
-      const key = insightKeys.recommendations('pending')
+      // Every pending list (ranked and newest-first) drops the card.
+      const key = insightKeys.recommendationsByStatus('pending')
       const snapshot = queryClient.getQueriesData({ queryKey: key }) as Snapshot
-      queryClient.setQueryData<Recommendation[]>(key, (list) => list?.filter((item) => item.id !== id))
+      queryClient.setQueriesData<Recommendation[]>({ queryKey: key }, (list) => list?.filter((item) => item.id !== id))
       return { snapshot }
     },
     onError: (error, _variables, context) => {
       context?.snapshot.forEach(([key, data]) => queryClient.setQueryData(key, data))
       toast.error(error.message)
+    },
+    // Dismissals feed the ranking, so say so.
+    onSuccess: (_data, { status }) => {
+      if (status === 'dismissed') toast("Got it. We'll show fewer tips like this.")
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: insightKeys.recommendationsAll }),
   })

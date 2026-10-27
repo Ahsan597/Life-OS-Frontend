@@ -1,6 +1,6 @@
 import { apiClient } from '@/api/client'
 import type { DateRange } from '@/types/habit'
-import type { Correlations, Recommendation, RecommendationStatus } from '@/types/insights'
+import type { Correlations, Recommendation, RecommendationSort, RecommendationStatus } from '@/types/insights'
 
 /** Defaults to the last 90 days; `to` is capped at yesterday by the server */
 export async function getCorrelations(range: DateRange = {}): Promise<Correlations> {
@@ -8,10 +8,13 @@ export async function getCorrelations(range: DateRange = {}): Promise<Correlatio
   return data
 }
 
-/** Recomputed by the server on every call, newest first */
-export async function listRecommendations(status: RecommendationStatus | 'all' = 'pending'): Promise<Recommendation[]> {
+/** Recomputed by the server on every call; render in the order received */
+export async function listRecommendations(
+  status: RecommendationStatus | 'all' = 'pending',
+  sort: RecommendationSort = 'rank',
+): Promise<Recommendation[]> {
   const { data } = await apiClient.get<{ recommendations: Recommendation[] }>('/insights/recommendations', {
-    params: { status },
+    params: { status, sort },
   })
   return data.recommendations
 }

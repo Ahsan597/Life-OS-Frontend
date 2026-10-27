@@ -16,9 +16,11 @@ export function insightsRange(today: string, days: number) {
   return { from: addDays(to, -(days - 1)), to }
 }
 
-export type RecommendationTone = 'warning' | 'positive' | 'info'
+export type RecommendationTone = 'urgent' | 'warning' | 'positive' | 'info'
 
-export const RULE_META: Record<RecommendationRule, { emoji: string; tone: RecommendationTone }> = {
+/** `badge` is a small second emoji layered on the icon, for the most urgent rule */
+export const RULE_META: Record<RecommendationRule, { emoji: string; tone: RecommendationTone; badge?: string }> = {
+  streak_at_risk: { emoji: '🔥', tone: 'urgent', badge: '⚠️' },
   missed_in_a_row: { emoji: '⚠️', tone: 'warning' },
   low_completion: { emoji: '📉', tone: 'warning' },
   streak_milestone: { emoji: '🔥', tone: 'positive' },
@@ -29,7 +31,7 @@ export const RULE_META: Record<RecommendationRule, { emoji: string; tone: Recomm
 
 /** Falls back to a neutral card for rules the backend adds later */
 export function ruleMeta(rule: string) {
-  return RULE_META[rule as RecommendationRule] ?? { emoji: '💡', tone: 'info' as const }
+  return RULE_META[rule as RecommendationRule] ?? { emoji: '💡', tone: 'info' as const, badge: undefined }
 }
 
 export const STRENGTH_LABELS: Record<Strength, string> = {

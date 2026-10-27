@@ -92,3 +92,17 @@ describe('HabitsPage', () => {
     expect(screen.getByRole('link', { name: 'Edit Read' })).toHaveAttribute('href', `/habits/${read.id}/edit`)
   })
 })
+
+describe('HabitsPage – streak risk', () => {
+  it('badges at-risk habits from one shared forecast request', async () => {
+    freezeTime()
+    const gym = fakeBackend.seedHabit({ title: 'Gym' })
+    fakeBackend.seedForecast(gym.id, { currentStreak: 0, riskLevel: 'high', riskScore: 0.8, completionProbability: 0.2 })
+    fakeBackend.seedHabit({ title: 'Read' })
+    renderApp('/habits')
+
+    expect(await screen.findByRole('button', { name: 'At risk: Gym. Show why' })).toHaveTextContent('At risk')
+    expect(screen.queryByRole('button', { name: /Read\. Show why/ })).not.toBeInTheDocument()
+    expect(fakeBackend.count('GET /predictions/streak-risk')).toBe(1)
+  })
+})
