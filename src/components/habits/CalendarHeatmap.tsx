@@ -1,4 +1,5 @@
 import { DAY_STATUS_LABELS, WEEKDAYS, type DayStatus, type HeatmapCell } from '@/lib/habits'
+import { useLayoutEffect, useRef } from 'react'
 import { formatWeekdayDayMonth } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 
@@ -21,9 +22,17 @@ interface CalendarHeatmapProps {
 }
 
 export function CalendarHeatmap({ weeks, onToggle, disabled }: CalendarHeatmapProps) {
+  const scroller = useRef<HTMLDivElement>(null)
+
+  // On phones the grid is wider than the screen: open on the current week, not the oldest.
+  useLayoutEffect(() => {
+    const element = scroller.current
+    if (element) element.scrollLeft = element.scrollWidth
+  }, [weeks.length])
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="overflow-x-auto pb-1">
+      <div ref={scroller} className="overflow-x-auto pb-1">
         <div className="inline-grid grid-flow-col grid-rows-[auto_repeat(7,1fr)] gap-1">
           {/* Weekday labels */}
           <span />
@@ -63,7 +72,14 @@ export function CalendarHeatmap({ weeks, onToggle, disabled }: CalendarHeatmapPr
 }
 
 function Cell({ cell, onToggle, disabled }: { cell: HeatmapCell; onToggle?: CalendarHeatmapProps['onToggle']; disabled?: boolean }) {
-  const base = 'size-4 rounded-[4px] sm:size-4.5'
+  // Phones: 40px cells (44px pitch with the gap) showing the day number, so taps land;
+  // larger screens keep the compact heatmap.
+  const base = 'flex size-10 items-center justify-center rounded-md text-[12px] tabular-nums sm:size-4.5 sm:rounded-[4px]'
+  const dayNumber = (
+    <span aria-hidden="true" className={cn('sm:hidden', cell.status === 'done' ? 'text-primary-foreground' : 'text-muted-foreground')}>
+      {Number(cell.date.slice(8))}
+    </span>
+  )
 
   // Future days can't be logged, so they render as empty space.
   if (cell.status === 'future') return <span className={base} aria-hidden="true" />
@@ -75,7 +91,13 @@ function Cell({ cell, onToggle, disabled }: { cell: HeatmapCell; onToggle?: Cale
     cell.isToday && 'ring-2 ring-foreground ring-offset-1 ring-offset-card',
   )
 
-  if (!onToggle) return <span role="img" aria-label={label} title={label} className={className} />
+  if (!onToggle) {
+    return (
+      <span role="img" aria-label={label} title={label} className={className}>
+        {dayNumber}
+      </span>
+    )
+  }
 
   return (
     <button
@@ -87,8 +109,10 @@ function Cell({ cell, onToggle, disabled }: { cell: HeatmapCell; onToggle?: Cale
       onClick={() => onToggle(cell)}
       className={cn(
         className,
-        'cursor-pointer transition-transform duration-100 outline-none hover:scale-115 focus-visible:ring-3 focus-visible:ring-focus-ring disabled:cursor-wait',
+        'cursor-pointer transition-transform duration-100 outline-none focus-visible:ring-3 focus-visible:ring-focus-ring disabled:cursor-wait sm:hover:scale-115',
       )}
-    />
+    >
+      {dayNumber}
+    </button>
   )
 }

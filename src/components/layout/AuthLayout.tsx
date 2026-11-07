@@ -1,6 +1,7 @@
 import { FlameIcon, SmileIcon, SparklesIcon } from 'lucide-react'
 import { Outlet } from 'react-router-dom'
 import { Logo } from '@/components/brand/Logo'
+import { useRouteChrome } from '@/hooks/useRouteChrome'
 
 const features = [
   { icon: FlameIcon, label: 'Daily habits & streaks' },
@@ -9,6 +10,7 @@ const features = [
 ]
 
 export function AuthLayout() {
+  useRouteChrome()
   return (
     <div className="flex min-h-svh flex-col bg-background lg:flex-row">
       {/* Brand panel: full column on desktop, a small header on mobile */}

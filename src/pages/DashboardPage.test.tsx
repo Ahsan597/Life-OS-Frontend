@@ -127,18 +127,19 @@ describe('DashboardPage – check-in prompt', () => {
 })
 
 describe('DashboardPage – suggestions', () => {
-  it('shows the two newest pending recommendations and links to the rest', async () => {
-    fakeBackend.seedRecommendation({ message: 'Oldest one', createdAt: '2026-10-15T10:00:00.000Z' })
-    fakeBackend.seedRecommendation({ message: 'Middle one', createdAt: '2026-10-17T10:00:00.000Z' })
-    fakeBackend.seedRecommendation({ message: 'Newest one', createdAt: '2026-10-19T10:00:00.000Z' })
+  it('shows the two top-ranked pending recommendations, in server order, and links to the rest', async () => {
+    fakeBackend.seedRecommendation({ message: 'Low score', score: 20, createdAt: '2026-10-19T10:00:00.000Z' })
+    fakeBackend.seedRecommendation({ message: 'Top score', score: 80, createdAt: '2026-10-15T10:00:00.000Z' })
+    fakeBackend.seedRecommendation({ message: 'Mid score', score: 50, createdAt: '2026-10-17T10:00:00.000Z' })
     fakeBackend.seedRecommendation({ message: 'Already handled', status: 'dismissed', createdAt: '2026-10-20T01:00:00.000Z' })
     renderApp('/dashboard')
 
     const list = await screen.findByRole('list', { name: 'Suggestions' })
     expect(within(list).getAllByRole('article').map((a) => a.getAttribute('aria-label'))).toEqual([
-      'Newest one',
-      'Middle one',
+      'Top score',
+      'Mid score',
     ])
+    expect(fakeBackend.requests()).toContain('GET /insights/recommendations?status=pending&sort=rank')
     expect(screen.getByRole('link', { name: 'See all' })).toHaveAttribute('href', '/insights')
   })
 
@@ -160,6 +161,85 @@ describe('DashboardPage – suggestions', () => {
 
     await user.click(await screen.findByRole('checkbox', { name: 'Read' }))
 
-    await waitFor(() => expect(fakeBackend.count('GET /insights/recommendations?status=pending')).toBe(2))
+    await waitFor(() => expect(fakeBackend.count('GET /insights/recommendations?status=pending&sort=rank')).toBe(2))
+  })
+})
+
+describe('DashboardPage – streak risk', () => {
+  const GYM_FORECAST = {
+    currentStreak: 5,
+    completionProbability: 0.095,
+    riskScore: 0.905,
+    riskLevel: 'high',
+    factors: [
+      { factor: 'miss_run', effect: 'raises_risk', detail: 'Missed the last 2 scheduled days in a row.' },
+      { factor: 'day_of_week', effect: 'lowers_risk', detail: 'Usually done on Tuesdays.' },
+    ],
+  }
+
+  it('lists high-risk streaks for today in a strip, linked to the habit', async () => {
+    const gym = fakeBackend.seedHabit({ title: 'Gym' })
+    fakeBackend.seedForecast(gym.id, GYM_FORECAST)
+    renderApp('/dashboard')
+
+    const strip = await screen.findByRole('list', { name: 'Streaks at risk today' })
+    const link = within(strip).getByRole('link')
+    expect(link).toHaveAttribute('href', `/habits/${gym.id}`)
+    expect(link).toHaveTextContent('Gym· 🔥 5 · ~91% miss chance')
+  })
+
+  it('hides the strip when nothing is at risk today', async () => {
+    const read = fakeBackend.seedHabit({ title: 'Read' })
+    fakeBackend.seedForecast(read.id, { ...GYM_FORECAST, riskLevel: 'medium', riskScore: 0.4 })
+    renderApp('/dashboard')
+
+    await screen.findByRole('button', { name: /^Watch: Read/ })
+    expect(screen.queryByRole('heading', { name: 'Streaks at risk today' })).not.toBeInTheDocument()
+  })
+
+  it('badges habit rows: "At risk" with the streak at stake, "Watch" for medium, nothing otherwise', async () => {
+    const gym = fakeBackend.seedHabit({ title: 'Gym' })
+    fakeBackend.seedForecast(gym.id, GYM_FORECAST)
+    const read = fakeBackend.seedHabit({ title: 'Read' })
+    fakeBackend.seedForecast(read.id, { ...GYM_FORECAST, riskLevel: 'medium', riskScore: 0.4 })
+    const walk = fakeBackend.seedHabit({ title: 'Walk' })
+    fakeBackend.seedForecast(walk.id, { ...GYM_FORECAST, riskLevel: 'low', riskScore: 0.1 })
+    fakeBackend.seedHabit({ title: 'Stretch' }) // insufficient_data
+    renderApp('/dashboard')
+
+    const scheduled = await screen.findByRole('list', { name: 'Scheduled today' })
+    const gymBadge = await within(scheduled).findByRole('button', { name: 'At risk: Gym. Show why' })
+    expect(gymBadge).toHaveTextContent('🔥 5 at risk')
+    expect(within(scheduled).getByRole('button', { name: 'Watch: Read. Show why' })).toHaveTextContent('Watch')
+    expect(within(scheduled).getAllByRole('button', { name: /Show why/ })).toHaveLength(2)
+  })
+
+  it('opens the badge to show the miss chance and the reasons', async () => {
+    const gym = fakeBackend.seedHabit({ title: 'Gym' })
+    fakeBackend.seedForecast(gym.id, GYM_FORECAST)
+    const { user } = renderApp('/dashboard')
+
+    await user.click(await screen.findByRole('button', { name: 'At risk: Gym. Show why' }))
+
+    expect(await screen.findByText('~91% chance of a miss today')).toBeInTheDocument()
+    expect(screen.getByText('Based on your recent pattern.')).toBeInTheDocument()
+    const reasons = screen.getByRole('list', { name: 'Reasons' })
+    expect(reasons).toHaveTextContent('Raises risk: Missed the last 2 scheduled days in a row.')
+    expect(reasons).toHaveTextContent('Lowers risk: Usually done on Tuesdays.')
+  })
+
+  it('clears the badge and strip when the risky habit is ticked off, and refetches the forecast', async () => {
+    const gym = fakeBackend.seedHabit({ title: 'Gym' })
+    fakeBackend.seedForecast(gym.id, GYM_FORECAST)
+    const { user } = renderApp('/dashboard')
+    await screen.findByRole('button', { name: 'At risk: Gym. Show why' })
+
+    await user.click(screen.getByRole('checkbox', { name: 'Gym' }))
+
+    // Gone straight away (optimistic), and the forecast moves on to tomorrow on refetch.
+    expect(screen.queryByRole('button', { name: /At risk: Gym/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Streaks at risk today' })).not.toBeInTheDocument()
+    await waitFor(() => expect(fakeBackend.count('GET /predictions/streak-risk')).toBe(2))
+    expect(screen.queryByRole('button', { name: /At risk: Gym/ })).not.toBeInTheDocument()
   })
 })

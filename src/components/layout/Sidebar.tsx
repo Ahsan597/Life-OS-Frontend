@@ -1,7 +1,6 @@
 import { PanelLeftCloseIcon, PanelLeftOpenIcon } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { Logo } from '@/components/brand/Logo'
-import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { NAV_ITEMS, isNavItemActive, type NavItem } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
@@ -72,7 +71,6 @@ interface SidebarLinkProps {
 
 function SidebarLink({ item, active, collapsed, onNavigate }: SidebarLinkProps) {
   const Icon = item.icon
-  const tooltip = item.soon ? 'Coming in the next update' : collapsed ? item.label : null
 
   const link = (
     <Link
@@ -80,32 +78,27 @@ function SidebarLink({ item, active, collapsed, onNavigate }: SidebarLinkProps) 
       onClick={onNavigate}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'relative flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors duration-150 outline-none focus-visible:ring-3 focus-visible:ring-focus-ring',
+        // 44px tall in the mobile drawer (touch), 40px on desktop
+        'relative flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors duration-150 outline-none focus-visible:ring-3 focus-visible:ring-focus-ring md:h-10',
         active
           ? 'bg-primary-soft text-primary before:absolute before:inset-y-2 before:left-0 before:w-0.75 before:rounded-full before:bg-primary'
-          : item.soon
-            ? 'text-subtle hover:bg-muted'
-            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
         collapsed && 'justify-center px-0',
       )}
     >
       <Icon className="size-4.5 shrink-0" aria-hidden="true" />
       <span className={cn('flex-1 truncate', collapsed && 'sr-only')}>{item.label}</span>
-      {item.soon && !collapsed ? (
-        <Badge variant="outline" className="text-[11px] text-subtle">
-          Soon
-        </Badge>
-      ) : null}
     </Link>
   )
 
-  if (!tooltip) return link
+  // The collapsed rail is icons only, so name each link on hover/focus.
+  if (!collapsed) return link
 
   return (
     <Tooltip>
       <TooltipTrigger render={link} />
       <TooltipContent side="right">
-        {collapsed && item.soon ? `${item.label} · Coming in the next update` : tooltip}
+        {item.label}
       </TooltipContent>
     </Tooltip>
   )

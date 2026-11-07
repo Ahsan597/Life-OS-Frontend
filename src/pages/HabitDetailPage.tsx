@@ -21,6 +21,7 @@ import { ArchiveHabitDialog } from '@/components/habits/ArchiveHabitDialog'
 import { CalendarHeatmap } from '@/components/habits/CalendarHeatmap'
 import { LogHistory } from '@/components/habits/LogHistory'
 import { RecommendationCard } from '@/components/insights/RecommendationCard'
+import { HabitForecastCard } from '@/components/predictions/HabitForecastCard'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -156,6 +157,8 @@ function HabitDetail({ habit }: { habit: Habit }) {
           icon={TargetIcon}
         />
       </div>
+
+      {habit.isActive ? <HabitForecastCard habitId={habit.id} /> : null}
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>

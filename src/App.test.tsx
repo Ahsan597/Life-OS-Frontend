@@ -45,6 +45,9 @@ describe('routing', () => {
     ['/check-ins', 'Daily check-in'],
     ['/history', 'Check-in history'],
     ['/insights', 'Insights'],
+    ['/predictions', /^Forecasts for /],
+    ['/notifications', 'Notifications'],
+    ['/settings', 'Settings'],
   ])('renders the page at %s', async (path, heading) => {
     setLoggedIn()
     renderApp(path)
@@ -67,13 +70,28 @@ describe('app shell', () => {
     const nav = screen.getByRole('navigation', { name: 'Main' })
 
     expect(within(nav).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
-    for (const name of ['Habits', 'Check-in', 'History', 'Insights']) {
-      expect(within(nav).getByRole('link', { name })).toHaveAttribute('href', `/${name === 'Check-in' ? 'check-ins' : name.toLowerCase()}`)
+    for (const [name, href] of [
+      ['Habits', '/habits'],
+      ['Check-in', '/check-ins'],
+      ['History', '/history'],
+      ['Insights', '/insights'],
+      ['Forecasts', '/predictions'],
+      ['Settings', '/settings'],
+    ]) {
+      expect(within(nav).getByRole('link', { name })).toHaveAttribute('href', href)
     }
     expect(within(nav).queryByText('Soon')).not.toBeInTheDocument()
   })
 
-  it('marks Habits active on nested habit pages', () => {
+  it('titles the browser tab after the page', async () => {
+    setLoggedIn()
+    renderApp('/settings')
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument()
+    expect(document.title).toBe('Settings · Life OS')
+  })
+
+    it('marks Habits active on nested habit pages', () => {
     setLoggedIn()
     renderApp('/habits/new')
     const nav = screen.getByRole('navigation', { name: 'Main' })

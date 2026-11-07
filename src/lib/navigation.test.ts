@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getPageTitle, isNavItemActive, NAV_ITEMS } from '@/lib/navigation'
+import { getDocumentTitle, getPageTitle, isNavItemActive, NAV_ITEMS } from '@/lib/navigation'
 
 const dashboard = NAV_ITEMS.find((item) => item.to === '/dashboard')!
 
@@ -26,5 +26,14 @@ describe('getPageTitle', () => {
 
   it('falls back to the app name for unknown paths', () => {
     expect(getPageTitle('/nowhere')).toBe('Life OS')
+  })
+})
+
+describe('getDocumentTitle', () => {
+  it('names the page in the browser tab', () => {
+    expect(getDocumentTitle('/habits/12')).toBe('Habits · Life OS')
+    expect(getDocumentTitle('/notifications')).toBe('Notifications · Life OS')
+    expect(getDocumentTitle('/login')).toBe('Log in · Life OS')
+    expect(getDocumentTitle('/nowhere')).toBe('Life OS')
   })
 })

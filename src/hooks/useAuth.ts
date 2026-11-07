@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { login, register } from '@/api/auth'
-import { toApiError, type ApiError } from '@/api/client'
+import { withApiError, type ApiError } from '@/api/client'
 import { startSession } from '@/lib/session'
 import type { AuthResponse, LoginPayload, RegisterPayload } from '@/types/auth'
 
@@ -8,26 +8,14 @@ import type { AuthResponse, LoginPayload, RegisterPayload } from '@/types/auth'
 
 export function useLogin() {
   return useMutation<AuthResponse, ApiError, LoginPayload>({
-    mutationFn: async (payload) => {
-      try {
-        return await login(payload)
-      } catch (error) {
-        throw toApiError(error)
-      }
-    },
+    mutationFn: withApiError(login),
     onSuccess: startSession,
   })
 }
 
 export function useRegister() {
   return useMutation<AuthResponse, ApiError, RegisterPayload>({
-    mutationFn: async (payload) => {
-      try {
-        return await register(payload)
-      } catch (error) {
-        throw toApiError(error)
-      }
-    },
+    mutationFn: withApiError(register),
     onSuccess: startSession,
   })
 }

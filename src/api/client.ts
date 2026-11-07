@@ -1,4 +1,6 @@
 import axios, { isAxiosError, type AxiosError, type InternalAxiosRequestConfig } from 'axios'
+import { toast } from 'sonner'
+import { formatRetryAfter, parseRetryAfter } from '@/lib/errors'
 import { tokenStorage } from '@/lib/tokenStorage'
 import type { ApiErrorBody, ApiFieldError } from '@/types/api'
 import type { AuthTokens } from '@/types/auth'
@@ -136,6 +138,35 @@ apiClient.interceptors.response.use(
 )
 
 // ---------------------------------------------------------------------------
+// Blob error bodies + rate limits
+// ---------------------------------------------------------------------------
+
+/** With responseType 'blob' (downloads) an error body is a Blob too: turn JSON back into an object */
+async function parseBlobErrorBody(error: AxiosError) {
+  const data = error.response?.data
+  if (typeof Blob === 'undefined' || !(data instanceof Blob)) return
+  try {
+    error.response!.data = JSON.parse(await data.text())
+  } catch {
+    // Not JSON: toApiError falls back to a generic message.
+  }
+}
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    await parseBlobErrorBody(error)
+    // 429s get one toast here and are never retried. The login/register forms show
+    // their own inline message and countdown instead.
+    if (error.response?.status === 429 && !isAuthEndpoint(error.config?.url)) {
+      const { message, retryAfter } = toApiError(error)
+      toast.error(message, { id: 'rate-limited', description: formatRetryAfter(retryAfter) ?? undefined })
+    }
+    return Promise.reject(error)
+  },
+)
+
+// ---------------------------------------------------------------------------
 // Error helpers
 // ---------------------------------------------------------------------------
 
@@ -144,6 +175,19 @@ export interface ApiError {
   status: number | null
   message: string
   details: ApiFieldError[]
+  /** Seconds from the Retry-After header (429s), or null */
+  retryAfter: number | null
+}
+
+/** Wraps a single-argument API call so it rejects with ApiError (forms read status/details directly) */
+export function withApiError<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>) {
+  return async (args: TArgs): Promise<TResult> => {
+    try {
+      return await fn(args)
+    } catch (error) {
+      throw toApiError(error)
+    }
+  }
 }
 
 export function toApiError(error: unknown): ApiError {
@@ -153,13 +197,15 @@ export function toApiError(error: unknown): ApiError {
         status: null,
         message: "Can't reach the Life OS server. Check your connection and try again.",
         details: [],
+        retryAfter: null,
       }
     }
     return {
       status: error.response.status,
       message: error.response.data?.error ?? 'Something went wrong. Please try again.',
       details: error.response.data?.details ?? [],
+      retryAfter: parseRetryAfter(error.response.headers?.['retry-after']),
     }
   }
-  return { status: null, message: 'Something went wrong. Please try again.', details: [] }
+  return { status: null, message: 'Something went wrong. Please try again.', details: [], retryAfter: null }
 }

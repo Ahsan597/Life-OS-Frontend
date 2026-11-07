@@ -59,8 +59,26 @@ export type RecommendationRule =
   | 'checkin_gap'
   | 'low_sleep'
   | 'rising_stress'
+  | 'streak_at_risk'
 
 export type RecommendationStatus = 'pending' | 'accepted' | 'dismissed'
+
+/** rank: pending by personal score, then the rest newest first. recent: newest first. */
+export type RecommendationSort = 'rank' | 'recent'
+
+export type Priority = 'high' | 'medium' | 'low'
+
+/** Multipliers behind the score; 1 = neutral */
+export interface ScoreFactors {
+  /** How important this kind of advice is */
+  ruleWeight: number
+  /** > 1: the linked habit's streak is at risk */
+  habitRisk: number
+  /** > 1: you usually accept this kind; < 1: you usually dismiss it */
+  feedback: number
+  /** New advice ranks slightly higher; decays over ~2 weeks */
+  freshness: number
+}
 
 export interface Recommendation {
   id: string
@@ -73,4 +91,8 @@ export interface Recommendation {
   status: RecommendationStatus
   createdAt: string
   updatedAt: string
+  /** 0–100; score, priority and scoreFactors are only set while pending */
+  score: number | null
+  priority: Priority | null
+  scoreFactors: ScoreFactors | null
 }

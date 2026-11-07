@@ -3,11 +3,13 @@ import { useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { FormField } from '@/components/form/FormField'
 import { PasswordInput } from '@/components/form/PasswordInput'
+import { RateLimitNotice } from '@/components/form/RateLimitNotice'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useLogin } from '@/hooks/useAuth'
+import { useRateLimit } from '@/hooks/useRateLimit'
 import { fieldDescribedBy } from '@/lib/form'
 import { validateEmail } from '@/lib/validation'
 
@@ -20,10 +22,13 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
+  const rateLimit = useRateLimit()
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (rateLimit.blocked) return
     setFormError(null)
+    rateLimit.clear()
 
     const errors: FieldErrors = {
       email: validateEmail(email),
@@ -36,7 +41,9 @@ export function LoginPage() {
       { email: email.trim(), password },
       {
         onError: (error) => {
-          if (error.status === 401) {
+          if (error.status === 429) {
+            rateLimit.start(error.message, error.retryAfter)
+          } else if (error.status === 401) {
             setFormError('Invalid email or password.')
             setPassword('')
           } else if (error.status === 400 && error.details.length > 0) {
@@ -89,7 +96,14 @@ export function LoginPage() {
             />
           </FormField>
 
-          <Button type="submit" size="lg" className="mt-2 w-full" loading={loginMutation.isPending}>
+          <RateLimitNotice message={rateLimit.message} secondsLeft={rateLimit.secondsLeft} />
+          <Button
+            type="submit"
+            size="lg"
+            className="mt-2 w-full"
+            loading={loginMutation.isPending}
+            disabled={rateLimit.blocked}
+          >
             Log in
           </Button>
         </form>

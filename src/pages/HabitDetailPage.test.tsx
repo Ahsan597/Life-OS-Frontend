@@ -184,4 +184,33 @@ describe('HabitDetailPage', () => {
 
     await waitFor(() => expect(screen.queryByRole('list', { name: 'Suggestions for this habit' })).not.toBeInTheDocument())
   })
+
+  it('shows the forecast with the chance, target day, risk chip, confidence and reasons', async () => {
+    const habit = seedReadingHabit()
+    fakeBackend.seedForecast(habit.id, {
+      target: { period: 'day', date: '2026-10-23', current: false },
+      completionProbability: 0.72,
+      riskScore: 0.28,
+      riskLevel: 'low',
+      confidence: 'medium',
+      factors: [{ factor: 'streak', effect: 'lowers_risk', detail: 'On a 4-day streak.' }],
+    })
+    renderApp(`/habits/${habit.id}`)
+
+    const card = (await screen.findByRole('heading', { name: 'Forecast' })).closest('[data-slot=card]') as HTMLElement
+    expect(await within(card).findByText('72%')).toBeInTheDocument()
+    expect(card).toHaveTextContent('likely to get done on Fri, 23 Oct')
+    expect(within(card).getByText('On track')).toBeInTheDocument()
+    expect(card).toHaveTextContent('Based on some history')
+    expect(card).toHaveTextContent('Lowers risk: On a 4-day streak.')
+  })
+
+  it('asks for more logs instead of a forecast when there is not enough history', async () => {
+    const habit = seedReadingHabit()
+    renderApp(`/habits/${habit.id}`)
+
+    expect(await screen.findByText('Log this habit for a few more days to unlock forecasts.')).toBeInTheDocument()
+    const card = screen.getByRole('heading', { name: 'Forecast' }).closest('[data-slot=card]') as HTMLElement
+    expect(within(card).queryByText(/%/)).not.toBeInTheDocument()
+  })
 })

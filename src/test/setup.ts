@@ -24,6 +24,9 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+// jsdom doesn't implement scrollTo (used on route changes).
+window.scrollTo = () => {}
+
 // jsdom doesn't implement matchMedia (used by next-themes and the responsive sidebar).
 if (!window.matchMedia) {
   window.matchMedia = (query: string) =>

@@ -3,6 +3,7 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { FormField } from '@/components/form/FormField'
 import { PasswordInput } from '@/components/form/PasswordInput'
+import { RateLimitNotice } from '@/components/form/RateLimitNotice'
 import { PasswordStrengthMeter } from '@/components/form/PasswordStrengthMeter'
 import { TimezoneSelect } from '@/components/form/TimezoneSelect'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -10,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useRegister } from '@/hooks/useAuth'
+import { useRateLimit } from '@/hooks/useRateLimit'
 import { getBrowserTimeZone } from '@/lib/datetime'
 import { fieldDescribedBy } from '@/lib/form'
 import {
@@ -53,6 +55,7 @@ export function RegisterPage() {
   const [submitted, setSubmitted] = useState(false)
   const [serverErrors, setServerErrors] = useState<Partial<Record<Field, ReactNode>>>({})
   const [formError, setFormError] = useState<string | null>(null)
+  const rateLimit = useRateLimit()
 
   const clientErrors = validate(values)
 
@@ -73,8 +76,10 @@ export function RegisterPage() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (rateLimit.blocked) return
     setSubmitted(true)
     setFormError(null)
+    rateLimit.clear()
     if (Object.values(clientErrors).some(Boolean)) return
 
     const name = values.name.trim()
@@ -87,7 +92,9 @@ export function RegisterPage() {
       },
       {
         onError: (error) => {
-          if (error.status === 409) {
+          if (error.status === 429) {
+            rateLimit.start(error.message, error.retryAfter)
+          } else if (error.status === 409) {
             setServerErrors({
               email: (
                 <>
@@ -186,7 +193,14 @@ export function RegisterPage() {
             />
           </FormField>
 
-          <Button type="submit" size="lg" className="mt-2 w-full" loading={registerMutation.isPending}>
+          <RateLimitNotice message={rateLimit.message} secondsLeft={rateLimit.secondsLeft} />
+          <Button
+            type="submit"
+            size="lg"
+            className="mt-2 w-full"
+            loading={registerMutation.isPending}
+            disabled={rateLimit.blocked}
+          >
             Create account
           </Button>
         </form>

@@ -1,10 +1,14 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { API, fakeBackend } from '@/test/fakeBackend'
 import { renderApp, setLoggedIn } from '@/test/renderApp'
 import { server } from '@/test/setup'
 import { freezeTime } from '@/test/time'
+
+// Toasts aren't rendered in page tests (no <Toaster />); record the calls instead.
+const toast = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }))
+vi.mock('sonner', async (importOriginal) => ({ ...(await importOriginal<typeof import('sonner')>()), toast }))
 
 const SLEEP = {
   metric: 'sleepHours',
@@ -180,20 +184,16 @@ describe('InsightsPage – patterns', () => {
 })
 
 describe('InsightsPage – recommendations', () => {
-  it('shows pending recommendations newest first with icon, habit link and reason', async () => {
+  it('shows pending recommendations with icon, habit link and reason', async () => {
     fakeBackend.seedRecommendation({
       rule: 'missed_in_a_row',
       habitId: '19',
       habitTitle: 'Gym',
       message: 'You\'ve missed "Gym" 3 times in a row.',
       reason: 'The last 3 days it was scheduled were all missed.',
-      createdAt: '2026-10-18T10:00:00.000Z',
+      score: 40,
     })
-    fakeBackend.seedRecommendation({
-      rule: 'streak_milestone',
-      message: 'Seven days straight!',
-      createdAt: '2026-10-19T10:00:00.000Z',
-    })
+    fakeBackend.seedRecommendation({ rule: 'streak_milestone', message: 'Seven days straight!', score: 45 })
     const { user } = renderApp('/insights')
 
     const list = await screen.findByRole('list', { name: 'Pending recommendations' })
@@ -207,7 +207,7 @@ describe('InsightsPage – recommendations', () => {
     expect(within(gym).getByRole('link', { name: 'Gym' })).toHaveAttribute('href', '/habits/19')
     const reason = within(gym).getByText('The last 3 days it was scheduled were all missed.')
     expect(reason).not.toBeVisible()
-    await user.click(within(gym).getByText('Why?'))
+    await user.click(within(gym).getByText('Why am I seeing this?'))
     expect(reason).toBeVisible()
   })
 
@@ -266,7 +266,7 @@ describe('InsightsPage – recommendations', () => {
     await user.click(screen.getByRole('button', { name: 'History' }))
 
     const list = await screen.findByRole('list', { name: 'Past recommendations' })
-    expect(fakeBackend.requests()).toContain('GET /insights/recommendations?status=all')
+    expect(fakeBackend.requests()).toContain('GET /insights/recommendations?status=all&sort=rank')
     expect(within(list).getAllByRole('article').map((a) => a.getAttribute('aria-label'))).toEqual([
       'Not for me',
       'Took this one',
@@ -274,5 +274,97 @@ describe('InsightsPage – recommendations', () => {
     expect(within(list).getByText('Accepted')).toBeInTheDocument()
     expect(within(list).getByText('Dismissed')).toBeInTheDocument()
     expect(within(list).queryByRole('button', { name: 'Accept' })).not.toBeInTheDocument()
+  })
+})
+
+describe('InsightsPage – ranked feed', () => {
+  it('renders in the server order (ranked by score) and highlights a high-priority top item', async () => {
+    fakeBackend.seedRecommendation({ message: 'Newest but low', score: 20, priority: 'low', createdAt: '2026-10-19T10:00:00.000Z' })
+    fakeBackend.seedRecommendation({ message: 'Most important', score: 82, priority: 'high', createdAt: '2026-10-12T10:00:00.000Z' })
+    fakeBackend.seedRecommendation({ message: 'Also high', score: 65, priority: 'high', createdAt: '2026-10-14T10:00:00.000Z' })
+    renderApp('/insights')
+
+    const list = await screen.findByRole('list', { name: 'Pending recommendations' })
+    const cards = within(list).getAllByRole('article')
+    expect(cards.map((a) => a.getAttribute('aria-label'))).toEqual(['Most important', 'Also high', 'Newest but low'])
+    expect(cards[0]).toHaveAttribute('data-featured', 'true')
+    expect(cards[1]).not.toHaveAttribute('data-featured')
+    expect(within(cards[0]).getByText('High priority')).toBeInTheDocument()
+    expect(within(cards[1]).getByText('High priority')).toBeInTheDocument()
+    expect(within(cards[2]).queryByText('High priority')).not.toBeInTheDocument()
+    expect(fakeBackend.requests()).toContain('GET /insights/recommendations?status=pending&sort=rank')
+  })
+
+  it('switches to newest first, keeping the choice in the URL', async () => {
+    fakeBackend.seedRecommendation({ message: 'Newer', score: 20, createdAt: '2026-10-19T10:00:00.000Z' })
+    fakeBackend.seedRecommendation({ message: 'Older', score: 80, createdAt: '2026-10-12T10:00:00.000Z' })
+    const { user } = renderApp('/insights')
+    await screen.findByRole('article', { name: 'Older' })
+
+    await user.click(screen.getByRole('button', { name: 'Newest' }))
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('list', { name: 'Pending recommendations' }))
+          .getAllByRole('article')
+          .map((a) => a.getAttribute('aria-label')),
+      ).toEqual(['Newer', 'Older']),
+    )
+    expect(fakeBackend.requests()).toContain('GET /insights/recommendations?status=pending&sort=recent')
+    expect(screen.getByRole('button', { name: 'Newest' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('opens on "Newest" from ?sort=recent', async () => {
+    fakeBackend.seedRecommendation({ message: 'Only one' })
+    renderApp('/insights?sort=recent')
+
+    await screen.findByRole('article', { name: 'Only one' })
+    expect(screen.getByRole('button', { name: 'Newest' })).toHaveAttribute('aria-pressed', 'true')
+    expect(fakeBackend.requests()).not.toContain('GET /insights/recommendations?status=pending&sort=rank')
+  })
+
+  it('explains the ranking under "Why am I seeing this?", leaving out near-neutral factors', async () => {
+    fakeBackend.seedRecommendation({
+      message: 'Ranked tip',
+      reason: 'You missed it twice.',
+      scoreFactors: { ruleWeight: 0.85, habitRisk: 1.2, feedback: 0.7, freshness: 0.98 },
+    })
+    renderApp('/insights')
+
+    const card = await screen.findByRole('article', { name: 'Ranked tip' })
+    expect(within(card).getByText('Why am I seeing this?')).toBeInTheDocument()
+    expect(within(card).getByText('You missed it twice.')).toBeInTheDocument()
+    const reasons = within(card).getByRole('list', { name: 'Ranking reasons', hidden: true })
+    expect(within(reasons).getAllByRole('listitem', { hidden: true }).map((li) => li.textContent)).toEqual([
+      "This habit's streak is at risk",
+      "You often dismiss these, so it's ranked lower",
+    ])
+  })
+
+  it('gives a streak-at-risk tip its own icon and a "Go to habit" button', async () => {
+    fakeBackend.seedRecommendation({
+      rule: 'streak_at_risk',
+      habitId: '18',
+      habitTitle: 'Read',
+      message: 'Your 5-day streak on "Read" is at risk today.',
+      priority: 'high',
+      score: 90,
+    })
+    renderApp('/insights')
+
+    const card = await screen.findByRole('article', { name: 'Your 5-day streak on "Read" is at risk today.' })
+    expect(card).toHaveAttribute('data-tone', 'urgent')
+    expect(card).toHaveTextContent('🔥⚠️')
+    expect(within(card).getByRole('link', { name: 'Go to habit' })).toHaveAttribute('href', '/habits/18')
+  })
+
+  it('says it will show fewer tips like a dismissed one', async () => {
+    fakeBackend.seedRecommendation({ message: 'Not useful' })
+    const { user } = renderApp('/insights')
+
+    const card = await screen.findByRole('article', { name: 'Not useful' })
+    await user.click(within(card).getByRole('button', { name: 'Dismiss' }))
+
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Got it. We'll show fewer tips like this."))
   })
 })

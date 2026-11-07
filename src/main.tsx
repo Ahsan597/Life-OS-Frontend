@@ -5,6 +5,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.tsx'
+import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import './index.css'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -32,7 +33,9 @@ createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delay={300}>
           <BrowserRouter>
-            <App />
+            <ErrorBoundary fullScreen>
+              <App />
+            </ErrorBoundary>
           </BrowserRouter>
         </TooltipProvider>
         <Toaster position="top-right" duration={4000} closeButton />
