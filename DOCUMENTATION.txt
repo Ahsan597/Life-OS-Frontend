@@ -36,6 +36,10 @@ Phase 3 - prediction + smarter recommendations (see PHASE 3 below):
   these?" (headline, calibration chart, Brier score).
 - Recommendations are ranked by the server, with priority badges, "Why am I
   seeing this?" and a Most relevant / Newest toggle.
+Phase 4 - product polish (see PHASE 4 below):
+- /settings: profile, timezone, reminder preferences, data export.
+- In-app notifications: navbar bell with unread badge, /notifications page.
+- Global rate-limit (429) handling; mobile touch targets.
 
 IMPORTANT LIBRARIES / TOOLS USED (and why)
 --------------------------------------------
@@ -259,6 +263,83 @@ Rules the UI depends on:
   /check-ins and its query key is ['checkins', 'day', date]. A Popover
   component (components/ui/popover.tsx, Base UI) was added for the badges.
 
+PHASE 4 - SETTINGS, NOTIFICATIONS, EXPORT, RATE LIMITS
+---------------------------------------------------------
+Routes / UI:
+  /settings           Profile (name; email read-only), Timezone (searchable,
+                      local-time preview, "Use my device timezone", confirm
+                      dialog), Notifications (daily reminder switch, time,
+                      email switch), Download your data (JSON / CSV per table).
+                      In the sidebar and the user menu.
+  /notifications      All / Unread (?filter=unread), "Load older" paging,
+                      per-item read/unread, Mark all as read
+  navbar bell         unread badge ("9+" above 9), latest 5 in a dropdown
+                      (a full-height sheet below 768px), Mark all, See all
+
+Endpoints:
+  GET/PATCH /users/me            src/api/users.ts, hooks/useProfile.ts, key ['me']
+  GET /notifications             src/api/notifications.ts, hooks/useNotifications.ts
+    ?limit=1  -> ['notifications', 'unreadCount']  (polls 60s + on focus,
+                 paused while the tab is hidden)
+    ?limit=5  -> ['notifications', 'latest']       (bell dropdown)
+    paged     -> ['notifications', { unreadOnly }] (useInfiniteQuery,
+                 nextCursor -> ?before=)
+  PATCH /notifications/:id, POST /notifications/read-all
+  GET /export?format=json | format=csv&dataset=...   src/api/export.ts
+
+Rules the UI depends on:
+- User now has `preferences` { remindersEnabled, reminderTime "HH:MM",
+  emailReminders } (types/auth.ts).
+- PATCH /users/me sends ONLY what changed (lib/settings.ts namePatch,
+  preferencesPatch). A blank name is sent as null.
+- A timezone change updates ['me'] and the auth store, then
+  queryClient.invalidateQueries() refreshes EVERYTHING ("today" moved).
+- reminderTime must match ^([01]\d|2[0-3]):[0-5]\d$ (<input type="time">).
+  400 details on "preferences.reminderTime" land on the time field.
+- Notification deep links (lib/notifications.ts notificationLink):
+  atRiskHabitIds[0] -> /habits/:id, else habitIds -> /dashboard, else
+  checkInMissing -> /check-ins. `data` may be null or have unknown keys.
+- Read / unread is optimistic across every cached notification list and the
+  badge; any read action invalidates ['notifications'].
+- Export: axios with responseType 'blob', filename from Content-Disposition
+  (fallback lifeos-export.json), saved via a temporary <a download>, object
+  URL revoked afterwards. CSV cells starting with = + - @ keep their ' prefix.
+- 429: handled once in the axios layer (api/client.ts). Blob error bodies are
+  parsed back to JSON first. One toast ("rate-limited" id) with "Try again in
+  N minutes" from Retry-After, except on auth endpoints: login/register show
+  the message inline above the button and disable it with a countdown
+  (components/form/RateLimitNotice.tsx).
+- React Query never retries a 4xx (lib/errors.ts shouldRetryQuery); network
+  errors and 5xx get one retry.
+- Differences from the Phase 4 spec, to match this codebase: forms use the
+  existing useState + lib/validation.ts pattern (React Hook Form and Zod are
+  not installed); errors go through toApiError (no getErrorMessage); types
+  live in src/types/*.ts; the check-in route is /check-ins and the dashboard is
+  /dashboard. The PWA (optional) was not added.
+
+ARCHITECTURE NOTES (shared building blocks - reuse these)
+-----------------------------------------------------------
+- api/client.ts withApiError(fn): every mutationFn is wrapped in it so
+  mutations reject with ApiError { status, message, details, retryAfter }.
+- lib/queryCache.ts snapshotQueries / restoreQueries: the optimistic-update
+  pattern (habit toggle, recommendations, notifications). Snapshot in
+  onMutate, restore in onError, invalidate in onSettled.
+- Pages are code-split (React.lazy in App.tsx); only the dashboard and the
+  auth pages are in the main bundle. AppLayout wraps the page in
+  <ErrorBoundary key={pathname}> + <Suspense>, so a crash or a failed chunk
+  load shows a recovery screen and clears on navigation. main.tsx has a
+  full-screen boundary around the whole app.
+- hooks/useRouteChrome.ts: sets the tab title ("Habits · Life OS") and scrolls
+  to the top on every route change (both layouts use it).
+- components/common/Segmented.tsx: the one toggle-button group used for every
+  range / view / sort switch.
+- components/charts/svg.ts columnPath: the bar shape shared by every chart.
+- hooks/usePredictions.ts: useStreakRisk() is the plain query;
+  useForecastsByHabit() is the habitId -> forecast Map for habit cards.
+- Habit calendar on phones: 40px cells with the day number (44px pitch),
+  scrolled to the current week; desktop keeps the compact heatmap.
+- coverage/ is generated and git-ignored.
+
 THEME ("Calm Focus")
 ----------------------
 - src/index.css maps the Calm Focus palette onto shadcn's variables (so all
@@ -301,6 +382,10 @@ Vitest (Jest-compatible API: describe/it/expect, vi.fn() instead of jest.fn())
     riskiest first, and logging the open period moves the target on
     (current: false), like the real server. Recommendations take score /
     priority / scoreFactors and honour ?sort=rank|recent.
+  - Phase 4: users carry preferences; GET/PATCH /users/me (with the backend's
+    validation), notifications with cursor paging (seedNotification(),
+    notification()), read-all, and /export (JSON + CSV with formula
+    protection). 429s are tested by overriding a handler with server.use().
 - src/test/time.ts: freezeTime() fixes the clock to Tue 2026-10-20 (Date only;
   timers stay real). The fake backend derives "today" from it, like the server.
 - src/test/renderApp.tsx renders the whole app at a route, with
@@ -320,7 +405,6 @@ npx shadcn@latest add <component>   add another shadcn/ui component
 
 STATUS / NEXT STEPS
 ----------------------
-Phase 0, 1, 2 and 3 frontend are done and tested (324 tests). Next is Phase 4
-(notifications/reminders, export, settings); build it once the backend ships
-the matching endpoints. The nav still
-supports `soon: true` and ComingSoonPage for any later placeholder routes.
+Phase 0-4 frontend is done and tested (374 tests), and checked against the
+real backend (every endpoint's response shape, CORS, exposed headers).
+Open items: the optional PWA; a manual look on real 360/768/1280px screens.

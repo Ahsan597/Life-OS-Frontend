@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChartDataTable } from '@/components/charts/ChartDataTable'
 import { ChartTooltip } from '@/components/charts/ChartTooltip'
+import { columnPath } from '@/components/charts/svg'
 import { useChartWidth } from '@/components/charts/useChartWidth'
 import { formatPercent } from '@/lib/predictions'
 import type { CalibrationBucket } from '@/types/predictions'
@@ -9,13 +10,6 @@ const HEIGHT = 200
 const PAD = { top: 44, right: 8, bottom: 24, left: 40 }
 const BAR_MAX = 28
 const GAP = 3
-const RADIUS = 4
-
-/** Column top with 4px rounded corners, square at the baseline */
-function columnPath(x: number, y: number, width: number, height: number) {
-  const r = Math.min(RADIUS, height, width / 2)
-  return `M${x},${y + height} V${y + r} Q${x},${y} ${x + r},${y} H${x + width - r} Q${x + width},${y} ${x + width},${y + r} V${y + height} Z`
-}
 
 function predictionsLabel(n: number) {
   return `${n} ${n === 1 ? 'forecast' : 'forecasts'}`

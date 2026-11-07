@@ -1,4 +1,4 @@
-import { LogOutIcon, MoonIcon, SunIcon } from 'lucide-react'
+import { LogOutIcon, MoonIcon, SettingsIcon, SunIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -39,6 +39,10 @@ export function UserMenu({ user }: { user: User }) {
           <p className="truncate text-[13px] text-muted-foreground">{user.timezone}</p>
         </div>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => navigate('/settings')} className="h-9 px-2">
+          <SettingsIcon />
+          Settings
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={toggle} className="h-9 px-2">
           {isDark ? <SunIcon /> : <MoonIcon />}
           {isDark ? 'Light mode' : 'Dark mode'}

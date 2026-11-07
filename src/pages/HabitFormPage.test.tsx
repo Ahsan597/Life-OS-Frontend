@@ -15,6 +15,7 @@ beforeEach(() => {
 describe('NewHabitPage', () => {
   it('creates a daily habit and opens it', async () => {
     const { user } = renderApp('/habits/new')
+    await screen.findByLabelText('Title') // the page chunk loads lazily
 
     expect(screen.getByLabelText('Title')).toHaveFocus()
     expect(screen.getByRole('radio', { name: /Daily/ })).toBeChecked()
@@ -29,6 +30,7 @@ describe('NewHabitPage', () => {
 
   it('creates a habit for specific days, sending them sorted', async () => {
     const { user } = renderApp('/habits/new')
+    await screen.findByLabelText('Title') // the page chunk loads lazily
 
     await user.type(screen.getByLabelText('Title'), 'Gym')
     await user.click(screen.getByRole('radio', { name: /Specific days/ }))
@@ -45,6 +47,7 @@ describe('NewHabitPage', () => {
 
   it('validates before sending anything', async () => {
     const { user } = renderApp('/habits/new')
+    await screen.findByLabelText('Title') // the page chunk loads lazily
 
     await user.click(screen.getByRole('radio', { name: /Specific days/ }))
     for (const day of ['Monday', 'Wednesday', 'Friday']) await user.click(screen.getByRole('button', { name: day }))
@@ -53,7 +56,8 @@ describe('NewHabitPage', () => {
     expect(screen.getByText('Title is required')).toBeInTheDocument()
     expect(screen.getByLabelText('Title')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByText('Pick at least one day')).toBeInTheDocument()
-    expect(fakeBackend.requests()).toEqual([])
+    // Nothing habit-related went out (the navbar bell polls notifications on its own).
+    expect(fakeBackend.requests().filter((r) => r.includes('/habits'))).toEqual([])
   })
 
   it('shows server validation errors on the matching field', async () => {
@@ -66,6 +70,7 @@ describe('NewHabitPage', () => {
       ),
     )
     const { user } = renderApp('/habits/new')
+    await screen.findByLabelText('Title') // the page chunk loads lazily
 
     await user.type(screen.getByLabelText('Title'), 'Read{Enter}')
 
@@ -76,6 +81,7 @@ describe('NewHabitPage', () => {
   it('shows other server errors as an alert', async () => {
     server.use(http.post(`${API}/habits`, () => HttpResponse.json({ error: 'Database unavailable' }, { status: 500 })))
     const { user } = renderApp('/habits/new')
+    await screen.findByLabelText('Title') // the page chunk loads lazily
 
     await user.type(screen.getByLabelText('Title'), 'Read{Enter}')
 

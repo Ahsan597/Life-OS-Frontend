@@ -1,7 +1,8 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { toApiError, type ApiError } from '@/api/client'
+import { withApiError, type ApiError } from '@/api/client'
 import { getCorrelations, listRecommendations, updateRecommendation } from '@/api/insights'
+import { restoreQueries, snapshotQueries, type QuerySnapshot } from '@/lib/queryCache'
 import type { DateRange } from '@/types/habit'
 import type { Recommendation, RecommendationSort, RecommendationStatus } from '@/types/insights'
 
@@ -44,8 +45,6 @@ export function useRecommendations(
   })
 }
 
-type Snapshot = [readonly unknown[], unknown][]
-
 /** Accept or dismiss: the card leaves the pending list straight away and comes back if the call fails */
 export function useUpdateRecommendation() {
   const queryClient = useQueryClient()
@@ -53,25 +52,18 @@ export function useUpdateRecommendation() {
     Recommendation,
     ApiError,
     { id: string; status: Exclude<RecommendationStatus, 'pending'> },
-    { snapshot: Snapshot }
+    { snapshot: QuerySnapshot }
   >({
-    mutationFn: async ({ id, status }) => {
-      try {
-        return await updateRecommendation(id, status)
-      } catch (error) {
-        throw toApiError(error)
-      }
-    },
+    mutationFn: withApiError(({ id, status }) => updateRecommendation(id, status)),
     onMutate: async ({ id }) => {
-      await queryClient.cancelQueries({ queryKey: insightKeys.recommendationsAll })
       // Every pending list (ranked and newest-first) drops the card.
       const key = insightKeys.recommendationsByStatus('pending')
-      const snapshot = queryClient.getQueriesData({ queryKey: key }) as Snapshot
+      const snapshot = await snapshotQueries(queryClient, key)
       queryClient.setQueriesData<Recommendation[]>({ queryKey: key }, (list) => list?.filter((item) => item.id !== id))
       return { snapshot }
     },
     onError: (error, _variables, context) => {
-      context?.snapshot.forEach(([key, data]) => queryClient.setQueryData(key, data))
+      restoreQueries(queryClient, context?.snapshot)
       toast.error(error.message)
     },
     // Dismissals feed the ranking, so say so.

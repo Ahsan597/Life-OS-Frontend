@@ -9,7 +9,7 @@ import { CONFIDENCE_LABELS, formatPercent, targetPhrase } from '@/lib/prediction
 /** The habit detail page's forecast, joined from the shared streak-risk query */
 export function HabitForecastCard({ habitId }: { habitId: string }) {
   const streakRisk = useStreakRisk()
-  const forecast = streakRisk.byHabit.get(habitId)
+  const forecast = streakRisk.data?.habits.find((item) => item.habitId === habitId)
 
   return (
     <Card>

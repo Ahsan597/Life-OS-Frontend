@@ -16,21 +16,22 @@ export function invalidateForecasts(queryClient: QueryClient) {
 }
 
 /**
- * One request for every habit's forecast, plus a habitId lookup so cards can join it
- * client-side. Short staleTime + focus refetch: "today" can roll over while the tab is open.
+ * One request for every habit's forecast. Short staleTime + focus refetch: "today" can
+ * roll over while the tab is open.
  */
 export function useStreakRisk() {
-  const query = useQuery({
+  return useQuery({
     queryKey: predictionKeys.streakRisk,
     queryFn: getStreakRisk,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   })
-  const byHabit = useMemo(
-    () => new Map<string, Forecast>(query.data?.habits.map((forecast) => [forecast.habitId, forecast]) ?? []),
-    [query.data],
-  )
-  return { ...query, byHabit }
+}
+
+/** habitId -> forecast, so habit cards join the shared query client-side (never a request per card) */
+export function useForecastsByHabit() {
+  const { data } = useStreakRisk()
+  return useMemo(() => new Map<string, Forecast>(data?.habits.map((forecast) => [forecast.habitId, forecast]) ?? []), [data])
 }
 
 export function usePredictionAccuracy(range: Required<DateRange>, { enabled = true } = {}) {

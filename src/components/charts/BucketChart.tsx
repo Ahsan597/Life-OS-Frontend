@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChartDataTable } from '@/components/charts/ChartDataTable'
 import { ChartTooltip } from '@/components/charts/ChartTooltip'
+import { columnPath } from '@/components/charts/svg'
 import { useChartWidth } from '@/components/charts/useChartWidth'
 import { formatRate } from '@/lib/habits'
 import { bucketName, metricLabel } from '@/lib/insights'
@@ -10,13 +11,6 @@ import type { Bucket } from '@/types/insights'
 const HEIGHT = 200
 const PAD = { top: 44, right: 8, bottom: 24, left: 40 }
 const BAR_MAX = 48
-const RADIUS = 4
-
-/** Column top with 4px rounded corners, square at the baseline */
-function columnPath(x: number, y: number, width: number, height: number) {
-  const r = Math.min(RADIUS, height, width / 2)
-  return `M${x},${y + height} V${y + r} Q${x},${y} ${x + r},${y} H${x + width - r} Q${x + width},${y} ${x + width},${y + r} V${y + height} Z`
-}
 
 function daysLabel(bucket: Bucket) {
   return `${bucket.days} ${bucket.days === 1 ? 'day' : 'days'}`
@@ -78,7 +72,7 @@ export function BucketChart({ metric, buckets }: { metric: Metric; buckets: Buck
                     y={PAD.top}
                     width={barW}
                     height={innerH}
-                    rx={RADIUS}
+                    rx={4}
                     strokeDasharray="4 4"
                     className="fill-none stroke-border"
                   />

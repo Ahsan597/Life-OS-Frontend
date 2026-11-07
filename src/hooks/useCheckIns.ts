@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { toApiError, type ApiError } from '@/api/client'
+import { withApiError, type ApiError } from '@/api/client'
 import { getCheckIn, getCheckInStats, listCheckIns, saveCheckIn } from '@/api/checkIns'
 import { invalidateInsights } from '@/hooks/useInsights'
 import { invalidateForecasts } from '@/hooks/usePredictions'
@@ -38,13 +38,7 @@ export function useCheckInStats(range: DateRange) {
 export function useSaveCheckIn() {
   const queryClient = useQueryClient()
   return useMutation<CheckIn, ApiError, CheckInPayload>({
-    mutationFn: async (payload) => {
-      try {
-        return await saveCheckIn(payload)
-      } catch (error) {
-        throw toApiError(error)
-      }
-    },
+    mutationFn: withApiError(saveCheckIn),
     onSuccess: (checkIn) => {
       queryClient.setQueryData(checkInKeys.day(checkIn.date), checkIn)
       // Today's check-in feeds the forecasts' check-in factor.

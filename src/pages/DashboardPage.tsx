@@ -26,7 +26,7 @@ import { useCheckIn } from '@/hooks/useCheckIns'
 import { useHabits, useLogHabit } from '@/hooks/useHabits'
 import { useRecommendations } from '@/hooks/useInsights'
 import { useNow } from '@/hooks/useNow'
-import { useStreakRisk } from '@/hooks/usePredictions'
+import { useForecastsByHabit, useStreakRisk } from '@/hooks/usePredictions'
 import { useToday } from '@/hooks/useToday'
 import { METRIC_META, MOOD_COLORS, MOOD_ICONS } from '@/lib/checkIns'
 import { formatLongDate, formatMonthDayYear, getGreeting, getHourInTimeZone } from '@/lib/datetime'
@@ -127,7 +127,7 @@ function AtRiskStrip() {
 function TodayHabitsCard() {
   const habits = useHabits()
   const logHabit = useLogHabit()
-  const { byHabit } = useStreakRisk()
+  const byHabit = useForecastsByHabit()
 
   const all = habits.data ?? []
   const scheduled = all.filter((habit) => habit.today.scheduled)

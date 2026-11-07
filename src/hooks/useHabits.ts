@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { toApiError, type ApiError } from '@/api/client'
+import { withApiError, type ApiError } from '@/api/client'
 import {
   archiveHabit,
   createHabit,
@@ -14,6 +14,7 @@ import {
 } from '@/api/habits'
 import { invalidateInsights } from '@/hooks/useInsights'
 import { invalidateForecasts } from '@/hooks/usePredictions'
+import { restoreQueries, snapshotQueries, type QuerySnapshot } from '@/lib/queryCache'
 import type { DateRange, Habit, HabitBase, HabitLog, HabitPayload, HabitUpdate } from '@/types/habit'
 
 /*
@@ -39,17 +40,6 @@ function refreshAfterWrite(queryClient: QueryClient) {
   ])
 }
 
-/** Mutations reject with ApiError so forms can read status/details directly */
-function apiCall<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>) {
-  return async (args: TArgs) => {
-    try {
-      return await fn(args)
-    } catch (error) {
-      throw toApiError(error)
-    }
-  }
-}
-
 export function useHabits(includeArchived = false) {
   return useQuery({ queryKey: habitKeys.list(includeArchived), queryFn: () => listHabits(includeArchived) })
 }
@@ -69,7 +59,7 @@ export function useHabitStats(id: string, range: DateRange, { enabled = true } =
 export function useCreateHabit() {
   const queryClient = useQueryClient()
   return useMutation<HabitBase, ApiError, HabitPayload>({
-    mutationFn: apiCall(createHabit),
+    mutationFn: withApiError(createHabit),
     onSuccess: () => refreshAfterWrite(queryClient),
   })
 }
@@ -77,7 +67,7 @@ export function useCreateHabit() {
 export function useUpdateHabit() {
   const queryClient = useQueryClient()
   return useMutation<HabitBase, ApiError, { id: string; patch: HabitUpdate }>({
-    mutationFn: apiCall(({ id, patch }) => updateHabit(id, patch)),
+    mutationFn: withApiError(({ id, patch }) => updateHabit(id, patch)),
     onSuccess: () => refreshAfterWrite(queryClient),
   })
 }
@@ -85,7 +75,7 @@ export function useUpdateHabit() {
 export function useArchiveHabit() {
   const queryClient = useQueryClient()
   return useMutation<void, ApiError, string>({
-    mutationFn: apiCall(archiveHabit),
+    mutationFn: withApiError(archiveHabit),
     onSuccess: () => refreshAfterWrite(queryClient),
   })
 }
@@ -95,8 +85,6 @@ interface LogVariables {
   date: string
   completed: boolean
 }
-
-type Snapshot = [readonly unknown[], unknown][]
 
 /** Flips today's checkbox and the calendar cell straight away; the server's answer replaces it */
 function applyOptimisticLog(queryClient: QueryClient, { habitId, date, completed }: LogVariables) {
@@ -124,16 +112,15 @@ function applyOptimisticLog(queryClient: QueryClient, { habitId, date, completed
 /** Marks a habit done / not done for a day (defaults to today on the server) */
 export function useLogHabit() {
   const queryClient = useQueryClient()
-  return useMutation<HabitLog, ApiError, LogVariables, { snapshot: Snapshot }>({
-    mutationFn: apiCall(({ habitId, date, completed }) => logHabit(habitId, { date, completed })),
+  return useMutation<HabitLog, ApiError, LogVariables, { snapshot: QuerySnapshot }>({
+    mutationFn: withApiError(({ habitId, date, completed }) => logHabit(habitId, { date, completed })),
     onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: habitKeys.all })
-      const snapshot = queryClient.getQueriesData({ queryKey: habitKeys.all }) as Snapshot
+      const snapshot = await snapshotQueries(queryClient, habitKeys.all)
       applyOptimisticLog(queryClient, variables)
       return { snapshot }
     },
     onError: (error, _variables, context) => {
-      context?.snapshot.forEach(([key, data]) => queryClient.setQueryData(key, data))
+      restoreQueries(queryClient, context?.snapshot)
       toast.error(error.message)
     },
     onSettled: () => refreshAfterWrite(queryClient),
@@ -143,7 +130,7 @@ export function useLogHabit() {
 export function useUpdateLog() {
   const queryClient = useQueryClient()
   return useMutation<HabitLog, ApiError, { logId: string; note: string | null }>({
-    mutationFn: apiCall(({ logId, note }) => updateLog(logId, { note })),
+    mutationFn: withApiError(({ logId, note }) => updateLog(logId, { note })),
     onSuccess: () => refreshAfterWrite(queryClient),
   })
 }

@@ -20,7 +20,7 @@ export function HabitCheckButton({ label, checked, onToggle, disabled }: HabitCh
       disabled={disabled}
       onClick={onToggle}
       className={cn(
-        'flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 transition-[background-color,border-color,transform] duration-150 outline-none focus-visible:ring-3 focus-visible:ring-focus-ring active:scale-95 disabled:cursor-not-allowed disabled:opacity-50',
+        "relative flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 after:absolute after:-inset-1.5 after:content-[''] transition-[background-color,border-color,transform] duration-150 outline-none focus-visible:ring-3 focus-visible:ring-focus-ring active:scale-95 disabled:cursor-not-allowed disabled:opacity-50",
         checked
           ? 'border-primary bg-primary text-primary-foreground'
           : 'border-border bg-card text-transparent hover:border-primary hover:text-primary/40',

@@ -4,6 +4,7 @@ import { TrendLineChart } from '@/components/charts/TrendLineChart'
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadError } from '@/components/common/LoadError'
 import { PageHeader } from '@/components/common/PageHeader'
+import { Segmented } from '@/components/common/Segmented'
 import { buttonVariants } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -40,22 +41,12 @@ export function CheckInHistoryPage() {
       />
 
       {/* Filters sit in one row above everything they scope. */}
-      <div role="group" aria-label="Date range" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
-        {RANGES.map((n) => (
-          <button
-            key={n}
-            type="button"
-            aria-pressed={n === days}
-            onClick={() => setParams(n === 30 ? {} : { days: String(n) }, { replace: true })}
-            className={cn(
-              'h-8 cursor-pointer rounded-md px-3 text-sm font-medium transition-colors duration-150 outline-none focus-visible:ring-3 focus-visible:ring-focus-ring',
-              n === days ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            Last {n} days
-          </button>
-        ))}
-      </div>
+      <Segmented
+        label="Date range"
+        value={days}
+        options={RANGES.map((n) => ({ value: n, label: `Last ${n} days` }))}
+        onChange={(n) => setParams(n === 30 ? {} : { days: String(n) }, { replace: true })}
+      />
 
       {stats.isPending ? (
         <div className="grid gap-6 md:grid-cols-2" aria-label="Loading trends">

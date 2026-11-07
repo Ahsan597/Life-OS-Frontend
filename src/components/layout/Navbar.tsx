@@ -1,6 +1,7 @@
 import { MenuIcon } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
+import { NotificationBell } from '@/components/notifications/NotificationBell'
 import { UserMenu } from '@/components/layout/UserMenu'
 import { Button } from '@/components/ui/button'
 import { useNow } from '@/hooks/useNow'
@@ -27,6 +28,7 @@ export function Navbar({ onOpenMenu }: { onOpenMenu: () => void }) {
           </time>
         ) : null}
         <ThemeToggle />
+        {user ? <NotificationBell /> : null}
         {user ? <UserMenu user={user} /> : null}
       </div>
     </header>

@@ -155,6 +155,7 @@ describe('toApiError', () => {
         { field: 'email', message: 'Invalid email address' },
         { field: 'password', message: 'Password must be at least 8 characters' },
       ],
+      retryAfter: null,
     })
   })
 

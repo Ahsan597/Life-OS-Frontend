@@ -1,7 +1,7 @@
 import { http, HttpResponse, type PathParams } from 'msw'
 
 /*
- * In-memory fake of the backend API (Phase 0 auth, Phase 1 habits/check-ins, Phase 2 insights, Phase 3 predictions), used by MSW in tests.
+ * In-memory fake of the backend API (Phase 0 auth, Phase 1 habits/check-ins, Phase 2 insights, Phase 3 predictions, Phase 4 profile/notifications/export), used by MSW in tests.
  * It mirrors the real contract, including refresh-token rotation and reuse
  * detection: sending an already-used refresh token revokes all of that user's
  * sessions and sets `reuseDetected`, so tests can assert the frontend never does it.
@@ -16,6 +16,7 @@ interface FakeUser {
   name: string | null
   timezone: string
   createdAt: string
+  preferences: { remindersEnabled: boolean; reminderTime: string; emailReminders: boolean }
 }
 
 interface RefreshRecord {
@@ -32,6 +33,7 @@ const state = {
   correlations: null as Partial<Body> | null,
   forecasts: new Map<string, Body>(),
   accuracy: null as Partial<Body> | null,
+  notifications: [] as FakeNotification[],
   accessTokens: new Map<string, string>(),
   refreshTokens: new Map<string, RefreshRecord>(),
   requests: [] as string[],
@@ -74,6 +76,7 @@ export const fakeBackend = {
     state.correlations = null
     state.forecasts.clear()
     state.accuracy = null
+    state.notifications = []
     state.accessTokens.clear()
     state.refreshTokens.clear()
     state.requests = []
@@ -91,6 +94,7 @@ export const fakeBackend = {
       name: 'Ahsan',
       timezone: 'Asia/Karachi',
       createdAt: '2026-10-17T13:03:30.000Z',
+      preferences: { remindersEnabled: true, reminderTime: '20:00', emailReminders: false },
       ...overrides,
     }
     state.users.push(user)
@@ -194,6 +198,29 @@ export const fakeBackend = {
     state.forecasts.set(habitId, fields)
   },
 
+  user: (id?: string) => (id ? state.users.find((u) => u.id === id) : state.users.at(-1)),
+
+  /** A notification for the most recently seeded user; ids grow, so newer seeds sort first */
+  seedNotification(fields: Partial<FakeNotification> = {}) {
+    state.counter += 1
+    const notification: FakeNotification = {
+      id: String(2000 + state.counter),
+      userId: state.users.at(-1)!.id,
+      type: 'reminder',
+      title: 'Your daily reminder',
+      message: 'You have habits left today.',
+      data: null,
+      isRead: false,
+      readAt: null,
+      createdAt: new Date(Date.parse('2026-10-20T06:00:00.000Z') + state.counter * 60_000).toISOString(),
+      ...fields,
+    }
+    state.notifications.push(notification)
+    return strip(notification)
+  },
+
+  notification: (id: string) => state.notifications.find((n) => n.id === id),
+
   /** Backtest results; anything left out comes back as "nothing evaluated yet" */
   seedAccuracy(fields: Partial<Body>) {
     state.accuracy = fields
@@ -209,6 +236,7 @@ export const handlers = [
   ...phase1Handlers(),
   ...phase2Handlers(),
   ...phase3Handlers(),
+  ...phase4Handlers(),
   http.get(`${API}/health`, () => HttpResponse.json({ status: 'ok', database: 'connected' })),
 
   http.post(`${API}/auth/register`, async ({ request }) => {
@@ -372,7 +400,9 @@ function authed(handler: (ctx: Ctx) => Response | Promise<Response>) {
     if (!user) return HttpResponse.json({ error: 'Authentication required' }, { status: 401 })
     let body: Body = {}
     if (['POST', 'PUT', 'PATCH'].includes(request.method)) {
-      body = (await request.json()) as Body
+      // Some POSTs (e.g. /notifications/read-all) have no body.
+      const text = await request.text()
+      body = (text ? JSON.parse(text) : {}) as Body
       state.bodies.set(`${request.method} ${new URL(request.url).pathname.replace('/api/v1', '')}`, body)
     }
     return handler({ request, params: params as Record<string, string>, user, today: dayIn(new Date(), user.timezone), body })
@@ -957,6 +987,206 @@ function phase3Handlers() {
           ...state.accuracy,
           from,
           to,
+        })
+      }),
+    ),
+  ]
+}
+
+// ===========================================================================
+// Phase 4: profile + preferences, notifications, export
+//
+// Rate limits (429) aren't simulated here; tests override a handler with
+// server.use() to return one with a Retry-After header.
+// ===========================================================================
+
+interface FakeNotification {
+  id: string
+  userId: string
+  type: string
+  title: string
+  message: string
+  data: Body | null
+  isRead: boolean
+  readAt: string | null
+  createdAt: string
+}
+
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+
+function validTimeZone(zone: unknown) {
+  if (typeof zone !== 'string' || !zone) return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function validateProfile(body: Body): FieldError[] {
+  const details: FieldError[] = []
+  const known = ['name', 'timezone', 'preferences'].filter((k) => body[k] !== undefined)
+  if (known.length === 0) return [{ field: '', message: 'Provide at least one field to update' }]
+  if (body.name !== undefined && body.name !== null) {
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name || name.length > 100) details.push({ field: 'name', message: 'Name must be 1-100 characters' })
+  }
+  if (body.timezone !== undefined && !validTimeZone(body.timezone)) {
+    details.push({ field: 'timezone', message: 'Invalid IANA timezone' })
+  }
+  const prefs = body.preferences
+  if (prefs !== undefined) {
+    if (!prefs || typeof prefs !== 'object' || Object.keys(prefs).length === 0) {
+      details.push({ field: 'preferences', message: 'Provide at least one preference' })
+    } else {
+      if (prefs.reminderTime !== undefined && !(typeof prefs.reminderTime === 'string' && TIME.test(prefs.reminderTime))) {
+        details.push({ field: 'preferences.reminderTime', message: 'Must be HH:MM (24h)' })
+      }
+      for (const key of ['remindersEnabled', 'emailReminders']) {
+        if (prefs[key] !== undefined && typeof prefs[key] !== 'boolean') {
+          details.push({ field: `preferences.${key}`, message: 'Must be a boolean' })
+        }
+      }
+    }
+  }
+  return details
+}
+
+function userNotifications(user: FakeUser) {
+  return state.notifications
+    .filter((n) => n.userId === user.id)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || Number(b.id) - Number(a.id))
+}
+
+function csv(rows: Body[], columns: string[]) {
+  const cell = (value: unknown) => {
+    let text = value === null || value === undefined ? '' : String(value)
+    if (/^[=+\-@]/.test(text)) text = `'${text}`
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+  }
+  return [columns.join(','), ...rows.map((row) => columns.map((c) => cell(row[c])).join(','))].join('\n')
+}
+
+function phase4Handlers() {
+  return [
+    http.get(
+      `${API}/users/me`,
+      authed(({ user }) => HttpResponse.json({ user: publicUser(user) })),
+    ),
+
+    http.patch(
+      `${API}/users/me`,
+      authed(({ user, body }) => {
+        const details = validateProfile(body)
+        if (details.length) return validationFailed(details)
+        if (body.name !== undefined) user.name = body.name === null ? null : body.name.trim()
+        if (body.timezone !== undefined) user.timezone = body.timezone
+        if (body.preferences) {
+          for (const key of ['remindersEnabled', 'reminderTime', 'emailReminders'] as const) {
+            if (body.preferences[key] !== undefined) (user.preferences as Body)[key] = body.preferences[key]
+          }
+        }
+        return HttpResponse.json({ user: publicUser(user) })
+      }),
+    ),
+
+    http.get(
+      `${API}/notifications`,
+      authed(({ request, user }) => {
+        const url = new URL(request.url)
+        const unreadOnly = url.searchParams.get('unreadOnly') === 'true'
+        const limit = Number(url.searchParams.get('limit') ?? 20)
+        const before = url.searchParams.get('before')
+        if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+          return validationFailed([{ field: 'limit', message: 'Must be 1-50' }])
+        }
+        const all = userNotifications(user)
+        let list = unreadOnly ? all.filter((n) => !n.isRead) : all
+        if (before) {
+          const index = list.findIndex((n) => n.id === before)
+          list = index === -1 ? [] : list.slice(index + 1)
+        }
+        const page = list.slice(0, limit)
+        return HttpResponse.json({
+          notifications: page.map(strip),
+          unreadCount: all.filter((n) => !n.isRead).length,
+          nextCursor: list.length > limit ? page.at(-1)!.id : null,
+        })
+      }),
+    ),
+
+    http.patch(
+      `${API}/notifications/:id`,
+      authed(({ params, user, body }) => {
+        if (typeof body.isRead !== 'boolean') return validationFailed([{ field: 'isRead', message: 'Must be a boolean' }])
+        const found = state.notifications.find((n) => n.id === params.id && n.userId === user.id)
+        if (!found) return notFound('Notification')
+        found.isRead = body.isRead
+        found.readAt = body.isRead ? new Date().toISOString() : null
+        return HttpResponse.json({ notification: strip(found) })
+      }),
+    ),
+
+    http.post(
+      `${API}/notifications/read-all`,
+      authed(({ user }) => {
+        const unread = state.notifications.filter((n) => n.userId === user.id && !n.isRead)
+        for (const n of unread) {
+          n.isRead = true
+          n.readAt = new Date().toISOString()
+        }
+        return HttpResponse.json({ updated: unread.length })
+      }),
+    ),
+
+    http.get(
+      `${API}/export`,
+      authed(({ request, user, today }) => {
+        const url = new URL(request.url)
+        const format = url.searchParams.get('format') ?? 'json'
+        const dataset = url.searchParams.get('dataset')
+        const habits = state.habits.filter((h) => h.userId === user.id).map(strip)
+        const ids = new Set(habits.map((h) => h.id))
+        const tables: Record<string, { rows: Body[]; columns: string[] }> = {
+          habits: { rows: habits, columns: ['id', 'title', 'description', 'frequency', 'isActive'] },
+          habit_logs: { rows: state.logs.filter((l) => ids.has(l.habitId)), columns: ['id', 'habitId', 'date', 'completed', 'note'] },
+          check_ins: {
+            rows: state.checkIns.filter((c) => c.userId === user.id).map(strip),
+            columns: ['id', 'date', 'mood', 'energy', 'sleepHours', 'stressLevel', 'note'],
+          },
+          recommendations: {
+            rows: state.recommendations.filter((r) => r.userId === user.id).map(strip),
+            columns: ['id', 'rule', 'message', 'status'],
+          },
+        }
+        if (format === 'csv') {
+          if (!dataset || !(dataset in tables)) {
+            return validationFailed([{ field: 'dataset', message: 'Choose habits, habit_logs, check_ins or recommendations' }])
+          }
+          const { rows, columns } = tables[dataset]
+          return new HttpResponse(csv(rows, columns), {
+            headers: {
+              'Content-Type': 'text/csv; charset=utf-8',
+              'Content-Disposition': `attachment; filename="lifeos-${dataset.replace('_', '-')}-${today}.csv"`,
+            },
+          })
+        }
+        if (format !== 'json') return validationFailed([{ field: 'format', message: 'Must be json or csv' }])
+        const payload = {
+          formatVersion: 1,
+          exportedAt: new Date().toISOString(),
+          user: publicUser(user),
+          habits,
+          habitLogs: tables.habit_logs.rows,
+          checkIns: tables.check_ins.rows,
+          recommendations: tables.recommendations.rows,
+        }
+        return new HttpResponse(JSON.stringify(payload), {
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Disposition': `attachment; filename="lifeos-export-${today}.json"`,
+          },
         })
       }),
     ),

@@ -13,7 +13,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useHabits, useUpdateHabit } from '@/hooks/useHabits'
-import { useStreakRisk } from '@/hooks/usePredictions'
+import { useForecastsByHabit } from '@/hooks/usePredictions'
 import { scheduleLabel } from '@/lib/habits'
 import type { Habit } from '@/types/habit'
 
@@ -105,7 +105,7 @@ export function HabitsPage() {
 function HabitRow({ habit, onArchive }: { habit: Habit; onArchive?: () => void }) {
   const update = useUpdateHabit()
   // One shared streak-risk query for the whole list, joined here by id.
-  const { byHabit } = useStreakRisk()
+  const byHabit = useForecastsByHabit()
 
   function restore() {
     update.mutate(
