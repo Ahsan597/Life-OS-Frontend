@@ -56,27 +56,49 @@ export function useHabitStats(id: string, range: DateRange, { enabled = true } =
   return useQuery({ queryKey: habitKeys.stats(id, range), queryFn: () => getHabitStats(id, range), enabled })
 }
 
+/** The title of a cached habit, for messages about it */
+function cachedHabitTitle(queryClient: QueryClient, habitId: string): string | undefined {
+  const detail = queryClient.getQueryData<Habit>(habitKeys.detail(habitId))
+  if (detail) return detail.title
+  for (const [, habits] of queryClient.getQueriesData<Habit[]>({ queryKey: habitKeys.lists })) {
+    const habit = habits?.find((item) => item.id === habitId)
+    if (habit) return habit.title
+  }
+}
+
+// Success toasts are shown before the refetch: see lib/mutationFeedback.
+
 export function useCreateHabit() {
   const queryClient = useQueryClient()
   return useMutation<HabitBase, ApiError, HabitPayload>({
     mutationFn: withApiError(createHabit),
-    onSuccess: () => refreshAfterWrite(queryClient),
+    onSuccess: (habit) => {
+      toast.success(`Created “${habit.title}”`)
+      return refreshAfterWrite(queryClient)
+    },
   })
 }
 
+/** Edits a habit, or restores an archived one with { isActive: true } */
 export function useUpdateHabit() {
   const queryClient = useQueryClient()
   return useMutation<HabitBase, ApiError, { id: string; patch: HabitUpdate }>({
     mutationFn: withApiError(({ id, patch }) => updateHabit(id, patch)),
-    onSuccess: () => refreshAfterWrite(queryClient),
+    onSuccess: (habit, { patch }) => {
+      toast.success(patch.isActive === true ? `Restored “${habit.title}”` : 'Habit updated')
+      return refreshAfterWrite(queryClient)
+    },
   })
 }
 
 export function useArchiveHabit() {
   const queryClient = useQueryClient()
-  return useMutation<void, ApiError, string>({
-    mutationFn: withApiError(archiveHabit),
-    onSuccess: () => refreshAfterWrite(queryClient),
+  return useMutation<void, ApiError, Pick<HabitBase, 'id' | 'title'>>({
+    mutationFn: withApiError(({ id }) => archiveHabit(id)),
+    onSuccess: (_data, habit) => {
+      toast.success(`Archived “${habit.title}”`)
+      return refreshAfterWrite(queryClient)
+    },
   })
 }
 
@@ -119,10 +141,13 @@ export function useLogHabit() {
       applyOptimisticLog(queryClient, variables)
       return { snapshot }
     },
-    onError: (error, _variables, context) => {
-      restoreQueries(queryClient, context?.snapshot)
-      toast.error(error.message)
+    onSuccess: (_log, { habitId, date, completed }) => {
+      const title = cachedHabitTitle(queryClient, habitId)
+      const what = title ? `“${title}”` : 'Habit'
+      // One toast per habit and day, so quick re-toggles replace it instead of stacking.
+      toast.success(completed ? `${what} marked done` : `${what} marked not done`, { id: `log-${habitId}-${date}` })
     },
+    onError: (_error, _variables, context) => restoreQueries(queryClient, context?.snapshot),
     onSettled: () => refreshAfterWrite(queryClient),
   })
 }
@@ -131,6 +156,9 @@ export function useUpdateLog() {
   const queryClient = useQueryClient()
   return useMutation<HabitLog, ApiError, { logId: string; note: string | null }>({
     mutationFn: withApiError(({ logId, note }) => updateLog(logId, { note })),
-    onSuccess: () => refreshAfterWrite(queryClient),
+    onSuccess: (_log, { note }) => {
+      toast.success(note ? 'Note saved' : 'Note removed')
+      return refreshAfterWrite(queryClient)
+    },
   })
 }

@@ -1,7 +1,6 @@
 import { ArchiveIcon, ArchiveRestoreIcon, ListChecksIcon, PencilIcon, PlusIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { toast } from 'sonner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadError } from '@/components/common/LoadError'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -108,13 +107,7 @@ function HabitRow({ habit, onArchive }: { habit: Habit; onArchive?: () => void }
   const byHabit = useForecastsByHabit()
 
   function restore() {
-    update.mutate(
-      { id: habit.id, patch: { isActive: true } },
-      {
-        onSuccess: () => toast.success(`Restored “${habit.title}”`),
-        onError: (error) => toast.error(error.message),
-      },
-    )
+    update.mutate({ id: habit.id, patch: { isActive: true } })
   }
 
   return (

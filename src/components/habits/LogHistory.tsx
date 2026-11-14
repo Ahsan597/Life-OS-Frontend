@@ -1,6 +1,5 @@
 import { CircleCheckIcon, CircleDashedIcon, NotebookPenIcon, PencilIcon } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -46,16 +45,7 @@ function LogRow({ log, today, readOnly }: { log: HabitLog; today: string; readOn
   const optimistic = log.id.startsWith('optimistic-')
 
   function save() {
-    updateLog.mutate(
-      { logId: log.id, note: draft.trim() || null },
-      {
-        onSuccess: () => {
-          setEditing(false)
-          toast.success('Note saved')
-        },
-        onError: (error) => toast.error(error.message),
-      },
-    )
+    updateLog.mutate({ logId: log.id, note: draft.trim() || null }, { onSuccess: () => setEditing(false) })
   }
 
   return (

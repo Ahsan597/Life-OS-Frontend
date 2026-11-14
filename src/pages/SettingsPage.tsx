@@ -1,6 +1,5 @@
 import { CircleAlertIcon, DownloadIcon, LocateFixedIcon } from 'lucide-react'
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
-import { toast } from 'sonner'
 import type { ApiError } from '@/api/client'
 import type { ExportDataset } from '@/api/export'
 import { LoadError } from '@/components/common/LoadError'
@@ -117,7 +116,6 @@ function ProfileSection({ user }: { user: User }) {
     update.mutate(
       { name: patch },
       {
-        onSuccess: () => toast.success('Profile saved'),
         onError: (error) => {
           const { fields, form } = serverErrors(error)
           setErrors({ name: fields.name, form })
@@ -182,10 +180,7 @@ function TimezoneSection({ user }: { user: User }) {
     update.mutate(
       { timezone: zone },
       {
-        onSuccess: (saved) => {
-          setConfirming(false)
-          toast.success(`Timezone set to ${saved.timezone}`)
-        },
+        onSuccess: () => setConfirming(false),
         onError: (apiError) => {
           setConfirming(false)
           const { fields, form } = serverErrors(apiError)
@@ -272,7 +267,6 @@ function RemindersSection({ user }: { user: User }) {
     update.mutate(
       { preferences: patch },
       {
-        onSuccess: () => toast.success('Reminder settings saved'),
         onError: (error) => {
           const { fields, form } = serverErrors(error)
           setErrors({ reminderTime: fields['preferences.reminderTime'] ?? fields.reminderTime, form })

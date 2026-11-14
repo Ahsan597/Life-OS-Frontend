@@ -1,17 +1,18 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThemeProvider } from 'next-themes'
 import { MemoryRouter } from 'react-router-dom'
 import App from '@/App'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { createQueryClient } from '@/lib/queryClient'
 import { tokenStorage } from '@/lib/tokenStorage'
 import { useAuthStore } from '@/store/authStore'
 import { fakeBackend } from '@/test/fakeBackend'
 
 /** Renders the whole app at `path`, as a logged-out visitor */
 export function renderApp(path = '/') {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  const queryClient = createQueryClient({ queries: { retry: false, staleTime: 0 }, mutations: { retry: false } })
   const user = userEvent.setup()
   const result = render(
     <ThemeProvider attribute="data-theme" storageKey="lifeos-theme" scriptProps={{ type: 'application/json' }}>
