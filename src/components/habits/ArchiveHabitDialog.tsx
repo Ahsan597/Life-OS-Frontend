@@ -1,4 +1,3 @@
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -23,13 +22,11 @@ export function ArchiveHabitDialog({ habit, onOpenChange, onArchived }: ArchiveH
 
   function confirm() {
     if (!habit) return
-    archive.mutate(habit.id, {
+    archive.mutate(habit, {
       onSuccess: () => {
-        toast.success(`Archived “${habit.title}”`)
         onOpenChange(false)
         onArchived?.()
       },
-      onError: (error) => toast.error(error.message),
     })
   }
 

@@ -26,6 +26,13 @@ export function useUpdateProfile() {
   return useMutation<User, ApiError, UserUpdate>({
     mutationFn: withApiError(updateProfile),
     onSuccess: (user, patch) => {
+      toast.success(
+        patch.timezone !== undefined
+          ? `Timezone set to ${user.timezone}`
+          : patch.preferences !== undefined
+            ? 'Reminder settings saved'
+            : 'Profile saved',
+      )
       const previousZone = useAuthStore.getState().user?.timezone
       queryClient.setQueryData(profileKeys.me, user)
       useAuthStore.getState().setUser(user)
@@ -44,9 +51,5 @@ export function useExport() {
       return filename
     }),
     onSuccess: (filename) => toast.success(`Downloaded ${filename}`),
-    // 429s already got the global rate-limit toast.
-    onError: (error) => {
-      if (error.status !== 429) toast.error(error.message)
-    },
   })
 }

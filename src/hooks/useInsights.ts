@@ -62,13 +62,11 @@ export function useUpdateRecommendation() {
       queryClient.setQueriesData<Recommendation[]>({ queryKey: key }, (list) => list?.filter((item) => item.id !== id))
       return { snapshot }
     },
-    onError: (error, _variables, context) => {
-      restoreQueries(queryClient, context?.snapshot)
-      toast.error(error.message)
-    },
+    onError: (_error, _variables, context) => restoreQueries(queryClient, context?.snapshot),
     // Dismissals feed the ranking, so say so.
     onSuccess: (_data, { status }) => {
       if (status === 'dismissed') toast("Got it. We'll show fewer tips like this.")
+      else toast.success('Tip accepted')
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: insightKeys.recommendationsAll }),
   })

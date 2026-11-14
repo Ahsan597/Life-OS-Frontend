@@ -1,4 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { withApiError, type ApiError } from '@/api/client'
 import { getCheckIn, getCheckInStats, listCheckIns, saveCheckIn } from '@/api/checkIns'
 import { invalidateInsights } from '@/hooks/useInsights'
@@ -37,9 +38,12 @@ export function useCheckInStats(range: DateRange) {
 
 export function useSaveCheckIn() {
   const queryClient = useQueryClient()
-  return useMutation<CheckIn, ApiError, CheckInPayload>({
+  return useMutation<CheckIn, ApiError, CheckInPayload, { existed: boolean }>({
     mutationFn: withApiError(saveCheckIn),
-    onSuccess: (checkIn) => {
+    // The same call creates or updates, so remember which one the user was doing.
+    onMutate: ({ date }) => ({ existed: !!queryClient.getQueryData<CheckIn | null>(checkInKeys.day(date)) }),
+    onSuccess: (checkIn, _payload, context) => {
+      toast.success(context?.existed ? 'Check-in updated' : 'Check-in saved')
       queryClient.setQueryData(checkInKeys.day(checkIn.date), checkIn)
       // Today's check-in feeds the forecasts' check-in factor.
       return Promise.all([

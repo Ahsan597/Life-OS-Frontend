@@ -100,7 +100,7 @@ function NotificationRow({ notification, now }: { notification: AppNotification;
   const link = notificationLink(notification)
 
   function open() {
-    if (!notification.isRead) setRead.mutate({ notification, isRead: true })
+    if (!notification.isRead) setRead.mutate({ notification, isRead: true, quiet: true })
     if (link) navigate(link)
   }
 

@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -6,6 +6,7 @@ import { useSaveCheckIn } from '@/hooks/useCheckIns'
 import { useArchiveHabit, useCreateHabit, useLogHabit } from '@/hooks/useHabits'
 import { insightKeys } from '@/hooks/useInsights'
 import { predictionKeys } from '@/hooks/usePredictions'
+import { createQueryClient } from '@/lib/queryClient'
 import { fakeBackend } from '@/test/fakeBackend'
 import { setLoggedIn } from '@/test/renderApp'
 import { TODAY, freezeTime } from '@/test/time'
@@ -14,7 +15,7 @@ const CORRELATIONS = insightKeys.correlations('2026-07-22', '2026-10-19')
 const PENDING = insightKeys.recommendations('pending')
 
 function setup() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  const queryClient = createQueryClient({ queries: { retry: false, staleTime: 0 }, mutations: { retry: false } })
   // Cached but unobserved, so invalidation marks them stale without refetching.
   queryClient.setQueryData(CORRELATIONS, { highlights: [] })
   queryClient.setQueryData(PENDING, [])
@@ -64,7 +65,7 @@ describe('insights cache refresh', () => {
 
 describe('streak-risk cache refresh', () => {
   function setupForecasts() {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const queryClient = createQueryClient({ queries: { retry: false, staleTime: 0 }, mutations: { retry: false } })
     queryClient.setQueryData(predictionKeys.streakRisk, { date: TODAY, modelVersion: 'x', habits: [] })
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -98,7 +99,7 @@ describe('streak-risk cache refresh', () => {
     const { wrapper, isStale } = setupForecasts()
     const { result } = renderHook(() => useArchiveHabit(), { wrapper })
 
-    act(() => result.current.mutate(habit.id))
+    act(() => result.current.mutate(habit))
 
     await waitFor(() => expect(isStale()).toBe(true))
   })

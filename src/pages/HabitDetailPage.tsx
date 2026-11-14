@@ -10,7 +10,6 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { toast } from 'sonner'
 import { toApiError } from '@/api/client'
 import { WeeklyRateChart } from '@/components/charts/WeeklyRateChart'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -74,13 +73,7 @@ function HabitDetail({ habit }: { habit: Habit }) {
   }
 
   function restoreHabit() {
-    restore.mutate(
-      { id: habit.id, patch: { isActive: true } },
-      {
-        onSuccess: () => toast.success(`Restored “${habit.title}”`),
-        onError: (error) => toast.error(error.message),
-      },
-    )
+    restore.mutate({ id: habit.id, patch: { isActive: true } })
   }
 
   return (

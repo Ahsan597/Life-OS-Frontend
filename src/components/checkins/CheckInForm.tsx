@@ -1,6 +1,5 @@
 import { CircleAlertIcon } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { toast } from 'sonner'
 import { ScalePicker } from '@/components/checkins/ScalePicker'
 import { FormField } from '@/components/form/FormField'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -50,10 +49,7 @@ export function CheckInForm({ date, existing, onSaved }: CheckInFormProps) {
       // Always send all four metrics: on an update, a field left out would keep its old value.
       { date, mood, energy, stressLevel, sleepHours, note: note.trim() || null },
       {
-        onSuccess: (checkIn) => {
-          toast.success(existing ? 'Check-in updated' : 'Check-in saved')
-          onSaved?.(checkIn)
-        },
+        onSuccess: (checkIn) => onSaved?.(checkIn),
         onError: (error) => {
           const { fields, form } = splitServerErrors(error.details)
           setErrors(fields)

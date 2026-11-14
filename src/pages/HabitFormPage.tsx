@@ -1,5 +1,4 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import { toast } from 'sonner'
 import { toApiError } from '@/api/client'
 import { LoadError } from '@/components/common/LoadError'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -23,10 +22,7 @@ export function NewHabitPage() {
             pending={create.isPending}
             onCancel={() => navigate(-1)}
             onSubmit={(payload) =>
-              create.mutateAsync(payload).then((habit) => {
-                toast.success(`Created “${habit.title}”`)
-                navigate(`/habits/${habit.id}`)
-              })
+              create.mutateAsync(payload).then((habit) => navigate(`/habits/${habit.id}`))
             }
           />
         </CardContent>
@@ -60,10 +56,7 @@ export function EditHabitPage() {
               pending={update.isPending}
               onCancel={() => navigate(`/habits/${id}`)}
               onSubmit={(patch) =>
-                update.mutateAsync({ id, patch }).then(() => {
-                  toast.success('Habit updated')
-                  navigate(`/habits/${id}`)
-                })
+                update.mutateAsync({ id, patch }).then(() => navigate(`/habits/${id}`))
               }
             />
           </CardContent>

@@ -38,7 +38,7 @@ export function NotificationBell() {
   const label = count > 0 ? `Notifications, ${count} unread` : 'Notifications'
 
   function openItem(notification: AppNotification) {
-    if (!notification.isRead) setRead.mutate({ notification, isRead: true })
+    if (!notification.isRead) setRead.mutate({ notification, isRead: true, quiet: true })
     setOpen(false)
     const link = notificationLink(notification)
     if (link) navigate(link)

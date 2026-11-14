@@ -64,10 +64,17 @@ function isInfinite(data: unknown): data is InfiniteData<NotificationPage> {
   return !!data && typeof data === 'object' && 'pages' in data
 }
 
+interface SetReadVariables {
+  notification: AppNotification
+  isRead: boolean
+  /** Marked read because the user opened it: no toast, the open itself is the feedback */
+  quiet?: boolean
+}
+
 /** Mark one read or unread: shown at once everywhere, rolled back if the server refuses */
 export function useSetNotificationRead() {
   const queryClient = useQueryClient()
-  return useMutation<AppNotification, ApiError, { notification: AppNotification; isRead: boolean }, { snapshot: QuerySnapshot }>({
+  return useMutation<AppNotification, ApiError, SetReadVariables, { snapshot: QuerySnapshot }>({
     mutationFn: withApiError(({ notification, isRead }) => setNotificationRead(notification.id, isRead)),
     onMutate: async ({ notification, isRead }) => {
       const snapshot = await snapshotQueries(queryClient, notificationKeys.all)
@@ -85,10 +92,10 @@ export function useSetNotificationRead() {
       }
       return { snapshot }
     },
-    onError: (error, _variables, context) => {
-      restoreQueries(queryClient, context?.snapshot)
-      toast.error(error.message)
+    onSuccess: (_data, { isRead, quiet }) => {
+      if (!quiet) toast.success(isRead ? 'Marked as read' : 'Marked as unread')
     },
+    onError: (_error, _variables, context) => restoreQueries(queryClient, context?.snapshot),
     onSettled: () => queryClient.invalidateQueries({ queryKey: notificationKeys.all }),
   })
 }
@@ -98,9 +105,9 @@ export function useMarkAllRead() {
   return useMutation<number, ApiError>({
     mutationFn: withApiError(markAllNotificationsRead),
     onSuccess: (updated) => {
-      if (updated > 0) toast.success(updated === 1 ? 'Marked 1 notification as read' : `Marked ${updated} notifications as read`)
+      if (updated === 0) toast.info('No unread notifications')
+      else toast.success(updated === 1 ? 'Marked 1 notification as read' : `Marked ${updated} notifications as read`)
     },
-    onError: (error) => toast.error(error.message),
     onSettled: () => queryClient.invalidateQueries({ queryKey: notificationKeys.all }),
   })
 }
